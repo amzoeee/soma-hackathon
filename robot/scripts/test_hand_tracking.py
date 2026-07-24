@@ -91,9 +91,12 @@ def main() -> None:
         source = "eye"
 
     print(f"Opening camera source={source!r} ...")
-    if not cam.open():
-        print("Failed to open camera. For Eye: Spatial Anchor ON + Nebula beta.")
-        sys.exit(1)
+    opened = cam.open()
+    if not opened:
+        # Don't hard-exit: the Eye goes silent whenever Spatial Anchor drops.
+        # Keep a window up and retry so it recovers without a relaunch.
+        print("Camera not streaming yet. For Eye: turn Spatial Anchor ON.")
+        print("Waiting for the stream (window stays open; press q to quit) ...")
 
     tracker = HandTracker(
         model_path=str(hand_model),
@@ -105,7 +108,8 @@ def main() -> None:
     pinch_filter = SignalFilter(alpha=0.25)
     missed_frames = 0
     RESET_AFTER_MISSES = 15  # ~0.5s of sustained loss before filters reset
-    print("Ready. Palm toward Eye, dark backdrop. Press q to quit.")
+    if opened:
+        print("Ready. Palm toward Eye, dark backdrop. Press q to quit.")
     print("Roll/pinch shown as SMOOTHED (raw in console).")
 
     win = "Hand Tracking (hackathon robot/)"
@@ -116,16 +120,26 @@ def main() -> None:
     fps_n = 0
     fps = 0.0
     last_print = 0.0
+    waiting_since = None if opened else time.perf_counter()
+    next_reopen = 0.0
 
     try:
         while True:
             ok, frame = cam.read()
             if not ok or frame is None:
+                now = time.perf_counter()
+                if waiting_since is None:
+                    waiting_since = now
+                # If open() bailed, the socket is closed — retry periodically.
+                if not cam.is_opened() and now >= next_reopen:
+                    next_reopen = now + 3.0
+                    cam.open()
+
                 placeholder = np.zeros((378, 512, 3), dtype=np.uint8)
                 cv2.putText(
                     placeholder,
                     "NO CAMERA FEED",
-                    (90, 170),
+                    (90, 160),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1.0,
                     (0, 0, 255),
@@ -134,11 +148,21 @@ def main() -> None:
                 )
                 cv2.putText(
                     placeholder,
-                    "check Spatial Anchor",
-                    (80, 210),
+                    f"waiting {now - waiting_since:.0f}s - turn Spatial Anchor ON",
+                    (40, 200),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     (0, 165, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+                cv2.putText(
+                    placeholder,
+                    "auto-recovers when stream returns   |   q = quit",
+                    (40, 230),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (200, 200, 200),
                     1,
                     cv2.LINE_AA,
                 )
@@ -146,6 +170,7 @@ def main() -> None:
                 if (cv2.waitKey(30) & 0xFF) in (ord("q"), 27):
                     break
                 continue
+            waiting_since = None
 
             # Display as BGR; tracking/gesture get grayscale (or BGR converted inside)
             if len(frame.shape) == 2:

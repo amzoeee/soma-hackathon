@@ -60,7 +60,13 @@ class XrealEyeCamera:
         self._lock = threading.Lock()
 
     def open(self) -> bool:
-        """Connects and waits for the first frame. False if stream is dead."""
+        """Connects and waits for the first frame. False if stream is dead.
+
+        Safe to call again after a failure — used to poll for the stream
+        coming back when Spatial Anchor is toggled.
+        """
+        with self._lock:
+            self._frames.clear()
         try:
             self._connect()
         except OSError as e:

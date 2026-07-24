@@ -134,11 +134,20 @@ class TeleopPipeline:
     # ------------------------------------------------------------------ run
     def run(self):
         """Main teleop loop."""
-        # Connect hardware
-        if not self.camera.open():
-            logger.error("Failed to open camera")
+        # Connect hardware. The Eye stream is silent whenever Spatial Anchor
+        # drops, so retry instead of killing the demo.
+        for attempt in range(10):
+            if self.camera.open():
+                logger.info("Camera opened")
+                break
+            logger.warning(
+                "Camera not streaming (attempt %d/10). For Eye: turn Spatial Anchor ON.",
+                attempt + 1,
+            )
+            time.sleep(3.0)
+        else:
+            logger.error("Camera never started streaming -- aborting")
             return
-        logger.info("Camera opened")
 
         if not self.arm.connect():
             logger.warning("Failed to connect to robot -- running in dry-run mode")
