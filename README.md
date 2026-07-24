@@ -11,37 +11,55 @@ When autonomy needs a human, take over with your hands through AR glasses or iMe
 ### iMessage Robot Agent
 Send a natural-language request. Linq delivers it, Runware GPT-5.6 Luna plans an ordered tool sequence, the arm executes step-by-step, and you get a deterministic result reply.
 
-![iMessage agent demo](docs/assets/imessage-agent-demo.gif)
+<p align="center">
+  <img src="docs/assets/imessage-agent-demo.jpg" alt="iMessage agent demo" />
+</p>
 
 <!-- Optional full video: drop docs/assets/imessage-agent-demo.mp4 and uncomment below
-<video src="docs/assets/imessage-agent-demo.mp4" controls width="720"></video>
+<p align="center">
+  <video src="docs/assets/imessage-agent-demo.mp4" controls width="720"></video>
+</p>
 -->
 
 ### Leader / Driver Arm Teleop
 Drive the follower SO-101 by moving a calibrated leader (driver) arm — joint-for-joint teleop with optional recording and replay for demos and datasets.
 
-<!-- ![Leader arm teleop demo](docs/assets/leader-arm-teleop-demo.gif) -->
+<!--
+<p align="center">
+  <img src="docs/assets/leader-arm-teleop-demo.gif" alt="Leader arm teleop demo" />
+</p>
+-->
 
 <!-- Optional full video: drop docs/assets/leader-arm-teleop-demo.mp4 and uncomment below
-<video src="docs/assets/leader-arm-teleop-demo.mp4" controls width="720"></video>
+<p align="center">
+  <video src="docs/assets/leader-arm-teleop-demo.mp4" controls width="720"></video>
+</p>
 -->
 
 ### Automated Arm
 The agent runs a planned tool sequence end-to-end — no leader arm, no hand tracking — just Luna’s ordered calls executing on the follower.
 
-![Automated arm demo](docs/assets/automated-arm-demo.gif)
+<p align="center">
+  <img src="docs/assets/automated-arm-demo.gif" alt="Automated arm demo" />
+</p>
 
 <!-- Optional full video: drop docs/assets/automated-arm-demo.mp4 and uncomment below
-<video src="docs/assets/automated-arm-demo.mp4" controls width="720"></video>
+<p align="center">
+  <video src="docs/assets/automated-arm-demo.mp4" controls width="720"></video>
+</p>
 -->
 
 ### Failure & Recovery
 When a step fails (missed grasp, workspace clamp, tool error), execution stops, Linq reports the failure, and a human can take over.
 
-![Failure demo](docs/assets/failure-demo.gif)
+<p align="center">
+  <img src="docs/assets/failure-demo.gif" alt="Failure demo" />
+</p>
 
 <!-- Optional full video: drop docs/assets/failure-demo.mp4 and uncomment below
-<video src="docs/assets/failure-demo.mp4" controls width="720"></video>
+<p align="center">
+  <video src="docs/assets/failure-demo.mp4" controls width="720"></video>
+</p>
 -->
 
 ### Deterministic Tool Execution
@@ -54,7 +72,11 @@ One message can produce many ordered calls. Execution stops on the first failure
 | `set_gripper` | Open or close the calibrated gripper |
 | `hold_position` | Stop and hold the current pose |
 
-<!-- ![Tool sequence / arm motion](docs/assets/tool-sequence-demo.gif) -->
+<!--
+<p align="center">
+  <img src="docs/assets/tool-sequence-demo.gif" alt="Tool sequence / arm motion" />
+</p>
+-->
 
 ---
 
