@@ -4,7 +4,3 @@ numpy>=1.24.0
 ikpy>=3.3.0
 # lerobot (install from source or pip)
 pyyaml>=6.0
-
-# Linq agent (src/linq)
-langgraph>=0.2.0
-anthropic>=0.69.0
