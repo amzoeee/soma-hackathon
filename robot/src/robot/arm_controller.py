@@ -1,8 +1,8 @@
 """LeRobot SO-101 follower arm controller.
 
-Verified against lerobot's current API: SO101Follower lives at
-lerobot.robots.so101_follower, actions are dicts of '<joint>.pos' in DEGREES
-(use_degrees=True), and get_observation() returns the same keys from encoders.
+LeRobot >=0.6 moved SO-101 to ``lerobot.robots.so_follower`` (older builds
+used ``lerobot.robots.so101_follower``). Actions are dicts of ``'<joint>.pos'``
+in DEGREES when ``use_degrees=True``.
 """
 
 from __future__ import annotations
@@ -13,11 +13,16 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 try:
-    from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+    from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 except ImportError:
-    logger.warning("Could not import SO101Follower from lerobot. Running in mock mode.")
-    SO101FollowerConfig = None
-    SO101Follower = None
+    try:
+        from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+    except ImportError:
+        logger.warning(
+            "Could not import SO101Follower from lerobot. Running in mock mode."
+        )
+        SO101FollowerConfig = None
+        SO101Follower = None
 
 
 class ArmController:

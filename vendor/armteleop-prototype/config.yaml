@@ -1,0 +1,95 @@
+camera:
+  source: eye            # eye | webcam
+  webcam_index: 0
+  eye_stream:
+    host: "169.254.2.1"
+    port: 52997
+  flip_horizontal: true
+
+hand:
+  min_detection_confidence: 0.25
+  min_tracking_confidence: 0.25
+  upscale: 2.5
+  gesture_model_path: "assets/gesture_recognizer.task"
+  reference_landmark: wrist
+  pinch_close_threshold: 0.30
+  pinch_hysteresis: 0.05
+  fist_score_threshold: 0.5
+  clutch_debounce_frames: 3
+
+smoothing:
+  min_cutoff: 1.0
+  beta: 0.007
+  pinch_ema_alpha: 0.4
+
+mapping:
+  mode: relative                # fist clutch, resume from current arm target
+  scale: { y: 0.45, z: 0.35, x: 0.30 }   # meters per normalized image unit
+  use_depth_axis: true          # hand-size proxy -> reach X (coarse, clamped)
+  center: { x: 0.18, y: 0.0, z: 0.15 }    # startup target (m, robot base frame)
+  workspace_box:
+    x: [0.14, 0.26]
+    y: [-0.15, 0.15]
+    z: [0.06, 0.26]
+  invert: { robot_z: true }
+  roll_scale: 1.0               # palm roll deg -> wrist_roll deg
+  roll_limit_deg: 60.0
+
+ik:
+  tier: ikpy                    # ikpy (URDF, position IK) | A (analytic fallback)
+  urdf_path: "assets/so101.urdf"
+  # Analytic fallback params:
+  L1: 0.1126
+  L2: 0.1349
+  z0: 0.0624
+  wrist_flex_fixed_deg: -20.0
+  # Fill after M0 jog test (±1 flips physical direction):
+  joint_sign:
+    shoulder_pan: 1
+    shoulder_lift: 1
+    elbow_flex: 1
+    wrist_flex: 1
+    wrist_roll: 1
+
+arm:
+  port: "COM5"                # bus board serial port
+  use_degrees: true
+  sim: false                  # true = print goals, no serial
+  max_delta_deg_per_tick: 3.0
+  max_relative_target: 5.0    # LeRobot safety belt (degrees)
+  stall_threshold_deg: 10.0   # commanded vs encoder divergence -> stall
+  load_flag_threshold: null   # measure at hackathon
+  home_pose_deg:
+    shoulder_pan: 0.0
+    shoulder_lift: -30.0
+    elbow_flex: 40.0
+    wrist_flex: -20.0
+    wrist_roll: 0.0
+    gripper: 100.0            # open
+  joint_order:
+    - shoulder_pan
+    - shoulder_lift
+    - elbow_flex
+    - wrist_flex
+    - wrist_roll
+    - gripper
+
+demo:
+  flag_trigger: scripted      # scripted | load
+  scripted_flag_step: 3
+
+display:
+  target_monitor: xreal       # drag/fullscreen HUD window onto glasses
+  show_fpv: false
+  fpv_camera_index: 1
+
+loop:
+  target_hz: 30
+
+keys:
+  estop: esc
+  home: h
+  flag: f
+  takeover: t
+  resume: r
+  quit: q

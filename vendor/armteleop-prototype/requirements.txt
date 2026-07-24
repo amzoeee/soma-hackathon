@@ -1,0 +1,7 @@
+opencv-python>=4.8.0
+numpy>=1.24.0
+mediapipe==0.10.35
+PyYAML>=6.0
+ikpy==4.0.0
+lerobot==0.4.1
+pyserial>=3.5

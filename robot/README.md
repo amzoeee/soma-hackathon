@@ -49,17 +49,19 @@ soma-hackathon/
 │   │   │   ├── enhance.py       # CLAHE/gamma for grayscale MediaPipe
 │   │   │   ├── hand_tracker.py
 │   │   │   └── gesture.py       # Closed_Fist = clutch
-│   │   ├── mapping/             # hand → EE + clutch
+│   │   ├── mapping/             # RelativeTeleop + filters
 │   │   ├── ik/                  # ikpy, degrees out
-│   │   ├── robot/               # LeRobot SO-101 wrapper
+│   │   ├── robot/               # LeRobot SO-101 wrapper (0.6 so_follower API)
 │   │   └── overlay/             # glasses HUD
 │   ├── scripts/
-│   │   ├── test_hand_tracking.py  # landmark + pos/roll/pinch/fist view
-│   │   ├── test_camera.py
-│   │   ├── calibrate.sh
-│   │   └── download_models.sh
-│   ├── models/                  # MediaPipe .task files
+│   │   ├── test_hand_tracking.py
+│   │   ├── test_target_position.py
+│   │   └── ...
+│   ├── models/                  # MediaPipe .task files (committed)
 │   └── requirements.txt
+├── vendor/
+│   ├── xreal-eye-grayscale/     # Full Aloim Eye stream toolkit (vendored)
+│   └── armteleop-prototype/     # Early m0/m1/m2 fallback (reference)
 └── docs/
 ```
 
