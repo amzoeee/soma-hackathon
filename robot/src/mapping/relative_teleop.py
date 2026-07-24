@@ -59,7 +59,14 @@ class RelativeTeleop:
         scale_y: float = 1.0,
         scale_z: float = 1.0,
         roll_scale: float = 1.0,
-        pos_filter_alpha: float = 0.25,
+        # Lighter alpha = heavier smoothing. z (depth from hand-size) is the
+        # noisiest channel on the grayscale feed, so it gets the most.
+        pos_filter_alpha: float = 0.15,
+        z_filter_alpha: float = 0.08,
+        # Ignore sub-jitter motion so a still hand → still target. Units are
+        # normalized image coords (x/y) and hand-size (z).
+        xy_deadband: float = 0.006,
+        z_deadband: float = 0.010,
         roll_filter_alpha: float = 0.12,
         roll_deadzone_deg: float = 4.0,
         gripper_filter_alpha: float = 0.3,
@@ -69,14 +76,20 @@ class RelativeTeleop:
         self.scale_y = scale_y
         self.scale_z = scale_z
         self.roll_scale = roll_scale
+        self.xy_deadband = xy_deadband
+        self.z_deadband = z_deadband
 
         self._fx = SignalFilter(alpha=pos_filter_alpha)
         self._fy = SignalFilter(alpha=pos_filter_alpha)
-        self._fz = SignalFilter(alpha=pos_filter_alpha)
+        self._fz = SignalFilter(alpha=z_filter_alpha)
         self._fg = SignalFilter(alpha=gripper_filter_alpha)
         self._froll = AngleFilter(
             alpha=roll_filter_alpha, deadzone_deg=roll_deadzone_deg
         )
+        # Deadbanded values actually used for the target (post-EMA hysteresis)
+        self._dbx: float | None = None
+        self._dby: float | None = None
+        self._dbz: float | None = None
 
         self._target = TeleopTarget(x=0.0, y=0.0, z=0.0, gripper=1.0)
         self._anchor = (0.0, 0.0, 0.0, 0.0)  # x,y,z,roll at engage
@@ -99,6 +112,9 @@ class RelativeTeleop:
         self._fz.reset()
         self._fg.reset()
         self._froll.reset()
+        self._dbx = None
+        self._dby = None
+        self._dbz = None
 
     def update(self, tracking: Optional[HandTrackingResult]) -> TeleopTarget:
         """Ingest one tracking frame; return the current TeleopTarget."""
@@ -150,6 +166,7 @@ class RelativeTeleop:
             self._fy.value = hy_raw
             self._fz.value = hz_raw
             self._froll.value = hroll_raw
+            self._dbx, self._dby, self._dbz = hx_raw, hy_raw, hz_raw
             hx, hy, hz, hroll = hx_raw, hy_raw, hz_raw, hroll_raw
             self._origin = (hx, hy, hz, hroll)
             self._anchor = (
@@ -160,9 +177,9 @@ class RelativeTeleop:
             )
             self._engaged = True
         else:
-            hx = self._fx.update(hx_raw)
-            hy = self._fy.update(hy_raw)
-            hz = self._fz.update(hz_raw)
+            hx = self._deadband(self._fx.update(hx_raw), "_dbx", self.xy_deadband)
+            hy = self._deadband(self._fy.update(hy_raw), "_dby", self.xy_deadband)
+            hz = self._deadband(self._fz.update(hz_raw), "_dbz", self.z_deadband)
             hroll = self._froll.update(hroll_raw)
 
         assert self._origin is not None
@@ -191,6 +208,18 @@ class RelativeTeleop:
         return self._target
 
     # ---------------------------------------------------------------- helpers
+    def _deadband(self, value: float, attr: str, band: float) -> float:
+        """Hold the last emitted value until motion exceeds ``band``.
+
+        Kills stationary jitter without adding lag to real motion: once the
+        smoothed value moves past the band, we snap to it and track from there.
+        """
+        held = getattr(self, attr)
+        if held is None or abs(value - held) >= band:
+            setattr(self, attr, value)
+            return value
+        return held
+
     def _debounce_fist(self, raw: bool) -> bool:
         if raw != self._fist:
             self._fist_streak += 1
