@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from .config import get_settings
 from .handler import handle_message
 from .linq_client import LinqClient
+from .terac.webhook import create_terac_webhook_router
 from .webhook import create_webhook_router
 
 
@@ -22,6 +23,13 @@ def create_app() -> FastAPI:
             handle_message,
             linq_client,
             webhook_secret=settings.linq_webhook_secret,
+        ),
+        prefix="/webhooks",
+    )
+    application.include_router(
+        create_terac_webhook_router(
+            linq_client,
+            webhook_secret=settings.terac_webhook_secret,
         ),
         prefix="/webhooks",
     )
