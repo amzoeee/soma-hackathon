@@ -179,6 +179,8 @@ def create_webhook_router(
 ) -> APIRouter:
     """Build an unmounted router without depending on demo config or app code."""
     router = APIRouter()
+    pending_replies: dict[str, str] = {}
+    completed_messages: set[str] = set()
     secret = (
         os.environ.get("LINQ_WEBHOOK_SECRET", "")
         if webhook_secret is None
@@ -201,7 +203,17 @@ def create_webhook_router(
         if message is None:
             return {"ok": True}
 
-        reply_text = await handle_message(message)
+        delivery_key = message.message_id or str(
+            payload.get("event_id") or ""
+        )
+        if delivery_key and delivery_key in completed_messages:
+            return {"ok": True}
+
+        reply_text = pending_replies.get(delivery_key, "")
+        if not reply_text:
+            reply_text = await handle_message(message)
+            if delivery_key and reply_text:
+                pending_replies[delivery_key] = reply_text
         if reply_text and reply_text.strip():
             await linq_client.send_reply(
                 OutboundReply(
@@ -209,6 +221,11 @@ def create_webhook_router(
                     text=reply_text.strip(),
                 )
             )
+        if delivery_key:
+            pending_replies.pop(delivery_key, None)
+            completed_messages.add(delivery_key)
+            if len(completed_messages) > 1024:
+                completed_messages.clear()
         return {"ok": True}
 
     return router
@@ -217,4 +234,3 @@ def create_webhook_router(
 # Kept for compatibility with code that imports ``demo.webhook.router``.
 # The application should mount the configured router returned above.
 router = APIRouter()
-

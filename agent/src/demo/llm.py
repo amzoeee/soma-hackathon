@@ -87,6 +87,7 @@ async def interpret_and_call_tools(text: str) -> tuple[str, list[dict]]:
             messages=messages,
             tools=tools,
             tool_choice="auto",
+            reasoning_effort="none",
         )
         if not response.choices:
             raise RuntimeError("Runware returned no completion choices")

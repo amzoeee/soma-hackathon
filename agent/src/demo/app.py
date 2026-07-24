@@ -1,15 +1,31 @@
-"""FastAPI app shell for the first-test demo."""
+"""FastAPI application for the first-test Linq-to-robot demo."""
 
 from fastapi import FastAPI
 
-app = FastAPI(title="Soma First Test Demo")
-
-
-@app.get("/health")
-async def health() -> dict[str, bool]:
-    return {"ok": True}
+from .config import get_settings
+from .handler import handle_message
+from .linq_client import LinqClient
+from .webhook import create_webhook_router
 
 
 def create_app() -> FastAPI:
-    # Agent 2 mounts: app.include_router(create_webhook_router(...), prefix="/webhooks")
-    return app
+    settings = get_settings()
+    application = FastAPI(title="Soma First Test Demo")
+
+    @application.get("/health")
+    async def health() -> dict[str, bool]:
+        return {"ok": True}
+
+    linq_client = LinqClient(api_key=settings.linq_api_key)
+    application.include_router(
+        create_webhook_router(
+            handle_message,
+            linq_client,
+            webhook_secret=settings.linq_webhook_secret,
+        ),
+        prefix="/webhooks",
+    )
+    return application
+
+
+app = create_app()

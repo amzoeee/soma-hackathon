@@ -16,7 +16,7 @@ import httpx
 logger = logging.getLogger("demo.linq_client")
 
 
-@dataclass(slots=True)
+@dataclass
 class InboundMessage:
     text: str
     conversation_id: str
@@ -25,7 +25,7 @@ class InboundMessage:
     raw: dict[str, Any] | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class OutboundReply:
     conversation_id: str
     text: str
@@ -74,7 +74,11 @@ class LinqClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {"parts": [{"type": "text", "value": reply.text}]}
+        payload = {
+            "message": {
+                "parts": [{"type": "text", "value": reply.text}],
+            }
+        }
 
         owns_client = self._http_client is None
         client = self._http_client or httpx.AsyncClient(timeout=self.timeout)
@@ -101,4 +105,3 @@ class LinqClient:
         finally:
             if owns_client:
                 await client.aclose()
-
