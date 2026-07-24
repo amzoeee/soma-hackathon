@@ -121,8 +121,10 @@ def move_to_cartesian_target(port: str, target_xyz: tuple, duration: float = 5.0
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Move SO-101 arm to target X, Y, Z coordinates using IK.")
     parser.add_argument("--port", type=str, default="/dev/tty.usbmodem5A460820851", help="Serial port")
-    parser.add_argument("--x", type=float, default=0.0, help="Target X in meters (right/left)")
-    parser.add_argument("--y", type=float, default=0.15, help="Target Y in meters (forward reach)")
+    # so101.urdf is right-handed: +x forward, +y left, +z up. At all joints 0
+    # the tool sits at (0.391, 0.000, 0.227), and shoulder_pan sweeps y.
+    parser.add_argument("--x", type=float, default=0.20, help="Target X in meters (forward reach)")
+    parser.add_argument("--y", type=float, default=0.0, help="Target Y in meters (lateral, + is left)")
     parser.add_argument("--z", type=float, default=0.20, help="Target Z in meters (height)")
     args = parser.parse_args()
 
