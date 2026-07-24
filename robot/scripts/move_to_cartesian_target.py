@@ -95,8 +95,8 @@ def move_to_cartesian_target(port: str, target_xyz: tuple, duration: float = 10.
         print(robot.get_observation())
 
     finally:
-        print("Disconnecting...")
-        robot.disconnect()
+        print("Done!")
+        time.sleep(10000)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Move SO-101 arm to target X, Y, Z coordinates using IK.")
