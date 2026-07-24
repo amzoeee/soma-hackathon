@@ -38,14 +38,23 @@ def _move_requires_confirmation(
     settings = get_settings()
     if not settings.terac_require_confirmation:
         return False
-    if direction == "stop":
+    if direction in {"stop", "open", "close"}:
         return False
-    if direction in {"forward", "backward"} and distance_meters is not None:
+    if direction in {"forward", "backward", "up", "down"} and distance_meters is not None:
         try:
             if float(distance_meters) <= _NUDGE_METERS:
                 return False
         except (TypeError, ValueError):
             pass
+    if direction in {
+        "left",
+        "right",
+        "tilt_up",
+        "tilt_down",
+        "roll_left",
+        "roll_right",
+    }:
+        return False
     return True
 
 

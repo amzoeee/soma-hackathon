@@ -29,10 +29,14 @@ def _apply_runtime_environment(settings: Settings) -> None:
         "RUNWARE_BASE_URL": settings.runware_base_url,
         "RUNWARE_MODEL": settings.runware_model,
         "PUBLIC_BASE_URL": settings.public_base_url,
+        "ROBOT_PORT": settings.robot_port,
+        "ROBOT_CALIBRATION_PATH": settings.robot_calibration_path,
+        "ROBOT_URDF_PATH": settings.robot_urdf_path,
     }
     for name, value in values.items():
         if value:
             os.environ.setdefault(name, value)
+    os.environ["ROBOT_ENABLED"] = "true" if settings.robot_enabled else "false"
 
 
 def main() -> None:
@@ -42,6 +46,13 @@ def main() -> None:
     )
     settings = _load_settings()
     _apply_runtime_environment(settings)
+    logger.info(
+        "Robot hardware: enabled=%s port=%s calibration=%s urdf=%s",
+        settings.robot_enabled,
+        settings.robot_port,
+        settings.robot_calibration_path,
+        settings.robot_urdf_path,
+    )
 
     public_base_url = settings.public_base_url.rstrip("/")
     webhook_url = (

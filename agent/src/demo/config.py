@@ -1,6 +1,7 @@
 """Typed settings for the first-test demo."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +13,21 @@ def _as_bool(value: object) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_files() -> tuple[Path, ...]:
+    agent_dir = Path(__file__).resolve().parents[2]
+    return (agent_dir.parent / ".env", agent_dir / ".env")
+
+
+def _default_calibration_path() -> str:
+    repo_root = Path(__file__).resolve().parents[3]
+    return str(repo_root / "robot" / "calibration" / "my_follower.json")
+
+
+def _default_urdf_path() -> str:
+    repo_root = Path(__file__).resolve().parents[3]
+    return str(repo_root / "robot" / "config" / "so101.urdf")
 
 
 class Settings(BaseSettings):
@@ -28,7 +44,6 @@ class Settings(BaseSettings):
     runware_model: str = "gpt-5.6-luna"
     public_base_url: str = ""
 
-    # Terac confirm-then-act
     terac_api_key: str = ""
     terac_base_url: str = "https://terac.com/api/external/v2"
     terac_dry_run: bool = True
@@ -38,9 +53,15 @@ class Settings(BaseSettings):
     terac_require_confirmation: bool = False
     terac_expert_role: str = "robotics / manufacturing operator"
 
+    robot_enabled: bool = False
+    robot_port: str = "/dev/cu.usbmodem5A460824771"
+    robot_calibration_path: str = _default_calibration_path()
+    robot_urdf_path: str = _default_urdf_path()
+
     @field_validator(
         "terac_dry_run",
         "terac_require_confirmation",
+        "robot_enabled",
         mode="before",
     )
     @classmethod
@@ -58,4 +79,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=_env_files())
