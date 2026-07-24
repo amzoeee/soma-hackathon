@@ -1,2 +1,8 @@
 langgraph>=0.2.0
 anthropic>=0.69.0
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+pydantic-settings
+openai
