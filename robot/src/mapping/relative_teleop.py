@@ -1,11 +1,8 @@
-"""Relative hand → target position for IK teleop.
+"""Relative hand → absolute EE target for IK teleop.
 
-Starts at (0, 0, 0). Open hand moves the target by the *delta* of wrist
-pose relative to the camera sample captured at engage. Fist = clutch:
-target freezes; reopen re-anchors so motion continues from that frozen
-pose (never snaps back to zero).
-
-Scale / fudge factors default to 1.0 — tune later against the arm.
+Call ``seed_pose(x, y, z, ...)`` with the arm's current FK before the loop
+so the first command holds still. Open hand moves by hand deltas relative
+to engage; fist freezes; reopen re-anchors from that frozen absolute pose.
 """
 
 from __future__ import annotations
@@ -20,15 +17,14 @@ from .filters import AngleFilter, SignalFilter
 
 @dataclass
 class TeleopTarget:
-    """What downstream IK / gripper control consume."""
+    """Absolute end-effector target for IK / gripper (meters, degrees)."""
 
-    # Position for the IK solver (relative units until scale is tuned)
     x: float
     y: float
     z: float
     # Gripper: 0 = closed, 1 = open
     gripper: float
-    # Palm roll relative to engage (degrees)
+    # Palm roll (degrees), relative to seed / re-anchor
     wrist_roll: float = 0.0
     # True when fist is holding the target frozen
     clutched: bool = False
@@ -37,7 +33,7 @@ class TeleopTarget:
 
 
 class RelativeTeleop:
-    """Accumulate a consistent target pose from HandTrackingResult + fist.
+    """Accumulate an absolute EE pose from HandTrackingResult + fist.
 
     Camera sample (normalized MediaPipe):
       hand_x : left→right (0..1)
@@ -47,9 +43,8 @@ class RelativeTeleop:
     Target update while engaged:
       target = anchor + scale * (hand - origin)
 
-    where ``origin`` is the hand sample at engage and ``anchor`` is the
-    target pose at engage (starts at 0,0,0; after a clutch it's the frozen
-    pose).
+    ``anchor`` starts as the seeded FK pose (not zero); after a clutch it is
+    the frozen absolute pose.
     """
 
     def __init__(
@@ -70,7 +65,11 @@ class RelativeTeleop:
         roll_filter_alpha: float = 0.12,
         roll_deadzone_deg: float = 4.0,
         gripper_filter_alpha: float = 0.3,
-        clutch_debounce: int = 3,
+        # Frames of consecutive fist / open required to flip clutch state.
+        # Long ON so accidental Closed_Fist blips don't freeze the arm.
+        clutch_on_frames: int = 18,
+        clutch_off_frames: int = 6,
+        clutch_debounce: int | None = None,  # legacy: applied to both if set
     ):
         self.scale_x = scale_x
         self.scale_y = scale_y
@@ -78,6 +77,11 @@ class RelativeTeleop:
         self.roll_scale = roll_scale
         self.xy_deadband = xy_deadband
         self.z_deadband = z_deadband
+        if clutch_debounce is not None:
+            clutch_on_frames = clutch_debounce
+            clutch_off_frames = max(clutch_debounce, 8)
+        self._on_frames = clutch_on_frames
+        self._off_frames = clutch_off_frames
 
         self._fx = SignalFilter(alpha=pos_filter_alpha)
         self._fy = SignalFilter(alpha=pos_filter_alpha)
@@ -91,22 +95,47 @@ class RelativeTeleop:
         self._dby: float | None = None
         self._dbz: float | None = None
 
+        # Absolute EE pose (meters). Seed from FK before the control loop.
+        self._seed = (0.0, 0.0, 0.0, 0.0)  # x, y, z, roll
+        self._seed_gripper = 1.0
         self._target = TeleopTarget(x=0.0, y=0.0, z=0.0, gripper=1.0)
         self._anchor = (0.0, 0.0, 0.0, 0.0)  # x,y,z,roll at engage
         self._origin: Optional[tuple[float, float, float, float]] = None
         self._engaged = False
         self._fist = False
         self._fist_streak = 0
-        self._debounce = clutch_debounce
+        self._open_streak = 0
+        self._debounce = clutch_off_frames  # kept for older helpers
 
-    def reset(self) -> None:
-        """Back to (0,0,0), open gripper, clear clutch/origin."""
-        self._target = TeleopTarget(x=0.0, y=0.0, z=0.0, gripper=1.0)
-        self._anchor = (0.0, 0.0, 0.0, 0.0)
+    def seed_pose(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        *,
+        wrist_roll: float = 0.0,
+        gripper: float = 1.0,
+    ) -> None:
+        """Set absolute start pose from arm FK / encoder state.
+
+        Call once after connecting so the first IK command matches the
+        physical arm (no snap from a hardcoded zero).
+        """
+        self._seed = (float(x), float(y), float(z), float(wrist_roll))
+        self._seed_gripper = max(0.0, min(1.0, float(gripper)))
+        self._target = TeleopTarget(
+            x=self._seed[0],
+            y=self._seed[1],
+            z=self._seed[2],
+            gripper=self._seed_gripper,
+            wrist_roll=self._seed[3],
+        )
+        self._anchor = self._seed
         self._origin = None
         self._engaged = False
         self._fist = False
         self._fist_streak = 0
+        self._open_streak = 0
         self._fx.reset()
         self._fy.reset()
         self._fz.reset()
@@ -115,6 +144,12 @@ class RelativeTeleop:
         self._dbx = None
         self._dby = None
         self._dbz = None
+        self._fg.value = self._seed_gripper
+
+    def reset(self) -> None:
+        """Back to the last seeded FK pose; clear clutch/origin."""
+        sx, sy, sz, sroll = self._seed
+        self.seed_pose(sx, sy, sz, wrist_roll=sroll, gripper=self._seed_gripper)
 
     def update(self, tracking: Optional[HandTrackingResult]) -> TeleopTarget:
         """Ingest one tracking frame; return the current TeleopTarget."""
@@ -131,16 +166,7 @@ class RelativeTeleop:
 
         hx_raw, hy_raw, hz_raw, hroll_raw = self._hand_sample(tracking)
         gripper = self._fg.update(self._pinch01(tracking))
-        # Fist freezes immediately (HandTracker already score-thresholds).
-        # Debounce only the open/re-engage edge so a 1-frame blip doesn't
-        # re-anchor mid-clutch.
-        raw_fist = bool(tracking.fist)
-        if raw_fist:
-            self._fist = True
-            self._fist_streak = 0
-            fist = True
-        else:
-            fist = self._debounce_fist(False)
+        fist = self._debounce_fist(bool(tracking.fist))
 
         if fist:
             # Freeze position. Do NOT keep updating pos filters while clutched
@@ -221,13 +247,20 @@ class RelativeTeleop:
         return held
 
     def _debounce_fist(self, raw: bool) -> bool:
-        if raw != self._fist:
+        """Require sustained fist to clutch ON, longer open to release.
+
+        Instant on + short off was the main clutch flicker source.
+        """
+        if raw:
             self._fist_streak += 1
-            if self._fist_streak >= self._debounce:
-                self._fist = raw
-                self._fist_streak = 0
+            self._open_streak = 0
+            if not self._fist and self._fist_streak >= self._on_frames:
+                self._fist = True
         else:
+            self._open_streak += 1
             self._fist_streak = 0
+            if self._fist and self._open_streak >= self._off_frames:
+                self._fist = False
         return self._fist
 
     @staticmethod

@@ -76,6 +76,8 @@ class TeleopPipeline:
             min_detection_confidence=self.settings.min_detection_confidence,
             min_tracking_confidence=self.settings.min_tracking_confidence,
             fist_score_threshold=self.settings.min_gesture_confidence,
+            min_hand_size=getattr(self.settings, "min_hand_size", 0.04),
+            hold_frames=getattr(self.settings, "hold_frames", 24),
         )
         self.gesture_recognizer = None  # clutch comes from hand_tracker.fist
 
@@ -96,11 +98,6 @@ class TeleopPipeline:
             gripper_filter_alpha=self.settings.gripper_filter_alpha,
         )
         self.roll_rate = RateLimiter(max_delta=self.settings.roll_max_delta_deg)
-        self.home = (
-            self.settings.home_x,
-            self.settings.home_y,
-            self.settings.home_z,
-        )
         self.workspace = {
             "x": (self.settings.workspace_x_min, self.settings.workspace_x_max),
             "y": (self.settings.workspace_y_min, self.settings.workspace_y_max),
@@ -114,6 +111,8 @@ class TeleopPipeline:
         self.arm = ArmController(
             port=self.settings.robot_port,
             robot_id=self.settings.robot_id,
+            max_relative_target=self.settings.max_relative_target,
+            calibration_dir=getattr(self.settings, "calibration_dir", "calibration"),
         )
         self.safety = SafetyController(
             max_relative_target=self.settings.max_relative_target,
@@ -148,6 +147,40 @@ class TeleopPipeline:
 
         if not self.arm.connect():
             logger.warning("Failed to connect to robot -- running in dry-run mode")
+            # Soft fallback: config home only when no arm is present.
+            self.teleop.seed_pose(
+                self.settings.home_x,
+                self.settings.home_y,
+                self.settings.home_z,
+            )
+        else:
+            # Seed absolute teleop target from live FK + encoder roll/gripper
+            # so the first command holds the physical pose (no snap to 0,0,0).
+            try:
+                angles = self.arm.get_joint_angles()
+                obs = self.arm.get_observation() or {}
+                hx, hy, hz = self.ik_solver.forward_kinematics(angles)
+                wrist_roll = float(obs.get("wrist_roll.pos", 0.0))
+                gripper01 = float(obs.get("gripper.pos", 100.0)) / 100.0
+                self.teleop.seed_pose(
+                    hx, hy, hz, wrist_roll=wrist_roll, gripper=gripper01
+                )
+                # Don't yank the arm if current FK sits slightly outside the box.
+                self._expand_workspace_to_include(hx, hy, hz)
+                self.roll_rate.update(wrist_roll)  # prime rate limiter at current roll
+                logger.info(
+                    "Teleop seeded from arm FK: (%.3f, %.3f, %.3f) roll=%.1f grip=%.2f",
+                    hx, hy, hz, wrist_roll, gripper01,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not seed from arm FK (%s); using config home", e
+                )
+                self.teleop.seed_pose(
+                    self.settings.home_x,
+                    self.settings.home_y,
+                    self.settings.home_z,
+                )
 
         self.running = True
         frame_time = 1.0 / self.settings.target_fps
@@ -169,16 +202,14 @@ class TeleopPipeline:
                 hand_detected = tracking_result is not None
                 gesture_name = tracking_result.gesture if tracking_result else None
 
-                # -- c/d. Relative teleop (smoothing + fist clutch) -> home
-                # offset -> workspace clamp -> IK -> safety -> send
+                # -- c/d. Relative teleop already holds absolute EE meters
+                # (seeded from FK). Clamp into workspace -> IK -> safety -> send
                 target = self.teleop.update(tracking_result)
                 clutch_active = target.clutched
 
-                # Never snap to home on a brief miss — hold last pose.
-                hx, hy, hz = self.home
-                wx = self._clamp(hx + target.x, *self.workspace["x"])
-                wy = self._clamp(hy + target.y, *self.workspace["y"])
-                wz = self._clamp(hz + target.z, *self.workspace["z"])
+                wx = self._clamp(target.x, *self.workspace["x"])
+                wy = self._clamp(target.y, *self.workspace["y"])
+                wz = self._clamp(target.z, *self.workspace["z"])
                 ee_xyz = (wx, wy, wz)
                 wrist_roll = self.roll_rate.update(target.wrist_roll)
                 gripper = max(0.0, min(100.0, target.gripper * 100.0))
@@ -228,6 +259,8 @@ class TeleopPipeline:
                     fps=fps,
                     stall_warnings=stall_status,
                     gesture=gesture_name,
+                    camera_frame=frame,
+                    landmarks=tracking_result.landmarks if tracking_result else None,
                 )
                 self.overlay.update(state)
                 self.overlay.show()
@@ -247,6 +280,13 @@ class TeleopPipeline:
             logger.exception("Pipeline error")
         finally:
             self.cleanup()
+
+    def _expand_workspace_to_include(self, x: float, y: float, z: float) -> None:
+        """Grow workspace bounds so a live FK seed isn't immediately clamped."""
+        margin = 0.01
+        for axis, value in (("x", x), ("y", y), ("z", z)):
+            lo, hi = self.workspace[axis]
+            self.workspace[axis] = (min(lo, value - margin), max(hi, value + margin))
 
     @staticmethod
     def _clamp(value: float, lo: float, hi: float) -> float:

@@ -39,15 +39,17 @@ class ArmController:
 
     def __init__(
         self,
-        port: str = "COM5",
+        port: str = "COM7",
         robot_id: str = "follower",
         max_relative_target: float = 5.0,
         max_delta_deg_per_tick: float = 3.0,
+        calibration_dir: str | None = "calibration",
     ):
         self.port = port
         self.robot_id = robot_id
         self.max_relative_target = max_relative_target
         self.max_delta = max_delta_deg_per_tick
+        self.calibration_dir = calibration_dir
         self._robot = None
         self._connected = False
         self._mock = SO101Follower is None
@@ -60,14 +62,31 @@ class ArmController:
             self._connected = True
             return True
         try:
-            config = SO101FollowerConfig(
-                port=self.port,
-                id=self.robot_id,
-                use_degrees=True,
-                max_relative_target=self.max_relative_target,
-            )
+            from pathlib import Path
+
+            kwargs = {
+                "port": self.port,
+                "id": self.robot_id,
+                "use_degrees": True,
+                "max_relative_target": self.max_relative_target,
+            }
+            if self.calibration_dir:
+                cal_dir = Path(self.calibration_dir)
+                cal_file = cal_dir / f"{self.robot_id}.json"
+                if cal_file.is_file():
+                    kwargs["calibration_dir"] = cal_dir
+                else:
+                    logger.warning(
+                        "No calibration at %s — lerobot may prompt to calibrate",
+                        cal_file,
+                    )
+
+            config = SO101FollowerConfig(**kwargs)
             self._robot = SO101Follower(config)
-            self._robot.connect(calibrate=True)
+            # Prefer existing calibration; don't block on interactive recalibrate.
+            self._robot.connect(calibrate=False)
+            if hasattr(self._robot, "bus") and hasattr(self._robot.bus, "enable_torque"):
+                self._robot.bus.enable_torque()
             self._connected = True
             logger.info("Connected to SO-101 on %s", self.port)
             return True

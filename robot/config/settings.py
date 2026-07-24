@@ -13,13 +13,15 @@ class Settings:
     eye_host: str = '169.254.2.1'
     eye_port: int = 52997
     
-    # Hand tracking (0.25 tuned on real Eye grayscale + enhancement)
+    # Hand tracking — looser on Eye grayscale so we don't freeze mid-move
     hand_model_path: str = 'models/hand_landmarker.task'
     gesture_model_path: str = 'models/gesture_recognizer.task'
     num_hands: int = 1
-    min_detection_confidence: float = 0.25
-    min_tracking_confidence: float = 0.25
-    min_gesture_confidence: float = 0.5
+    min_detection_confidence: float = 0.15
+    min_tracking_confidence: float = 0.15
+    min_gesture_confidence: float = 0.60
+    hold_frames: int = 24
+    min_hand_size: float = 0.04
     
     # Mapping - hand tracking box (normalized coords 0-1)
     hand_box_x_min: float = 0.2
@@ -27,27 +29,28 @@ class Settings:
     hand_box_y_min: float = 0.2
     hand_box_y_max: float = 0.8
     
-    # Mapping - robot workspace bounds (meters)
-    workspace_x_min: float = -0.15
-    workspace_x_max: float = 0.15
-    workspace_y_min: float = 0.05
-    workspace_y_max: float = 0.30
+    # Mapping - robot workspace bounds (meters, SO-101 URDF frame:
+    # +x forward/reach, +y left, +z up). Tuned from live FK of the arm.
+    workspace_x_min: float = 0.12
+    workspace_x_max: float = 0.30
+    workspace_y_min: float = -0.15
+    workspace_y_max: float = 0.15
     workspace_z_min: float = 0.05
-    workspace_z_max: float = 0.35
+    workspace_z_max: float = 0.30
 
     # Relative teleop: (0,0,0) + home offset = reachable start pose in meters.
     # Scales convert normalized hand deltas → meters. Tune live if reach feels off.
-    home_x: float = 0.0
-    home_y: float = 0.18
-    home_z: float = 0.20
-    teleop_scale_x: float = 2.0   # depth (hand size) → reach
-    teleop_scale_y: float = 0.75  # image-x → lateral
-    teleop_scale_z: float = 0.75  # image-y → up/down
+    home_x: float = 0.20
+    home_y: float = 0.0
+    home_z: float = 0.15
+    teleop_scale_x: float = 0.5   # depth (hand size) → reach (x)
+    teleop_scale_y: float = 0.6   # image-x → lateral (y)
+    teleop_scale_z: float = 0.5   # image-y → up/down (z)
     teleop_roll_scale: float = 1.0
     
     # Filters
     z_filter_alpha: float = 0.08
-    z_clamp_range: Tuple[float, float] = (0.05, 0.35)
+    z_clamp_range: Tuple[float, float] = (0.05, 0.30)
     position_filter_alpha: float = 0.15
     deadzone_threshold: float = 0.005
     xy_deadband: float = 0.006
@@ -61,9 +64,12 @@ class Settings:
     gripper_filter_alpha: float = 0.25
     
     # Robot (Windows: COMx, Linux: /dev/ttyACM0)
-    robot_port: str = 'COM5'
+    # Device Manager currently shows the Feetech bus on COM7.
+    robot_port: str = 'COM7'
     robot_id: str = 'follower'
     urdf_path: str = 'config/so101.urdf'
+    # Local calibration JSON dir (file must be named {robot_id}.json)
+    calibration_dir: str = 'calibration'
     
     # Safety
     max_relative_target: float = 5.0
@@ -71,8 +77,8 @@ class Settings:
     stall_frames: int = 10
     
     # Overlay
-    overlay_width: int = 800
-    overlay_height: int = 400
+    overlay_width: int = 1100
+    overlay_height: int = 600
     overlay_display_index: Optional[int] = None
     
     # Loop
