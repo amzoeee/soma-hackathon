@@ -46,7 +46,7 @@ class Settings:
     teleop_scale_x: float = 0.5   # depth (hand size) → reach (x)
     teleop_scale_y: float = 0.6   # image-x → lateral (y)
     teleop_scale_z: float = 0.5   # image-y → up/down (z)
-    teleop_roll_scale: float = 1.0
+    teleop_roll_scale: float = 0.0  # Wrist roll locked to horizontal (0.0 deg)
     
     # Filters
     z_filter_alpha: float = 0.08
