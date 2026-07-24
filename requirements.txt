@@ -1,0 +1,19 @@
+# Core & Web Agent Dependencies
+fastapi
+uvicorn[standard]
+httpx
+pydantic
+pydantic-settings
+openai
+anthropic>=0.69.0
+langgraph>=0.2.0
+
+# Robot & Vision Dependencies
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+numpy>=1.24.0
+ikpy>=3.3.0
+lerobot>=0.6.0
+pyserial>=3.5
+pyyaml>=6.0
+scservo_sdk
