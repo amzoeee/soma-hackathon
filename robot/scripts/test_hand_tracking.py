@@ -103,6 +103,8 @@ def main() -> None:
     gestures = GestureRecognizer(model_path=str(gesture_model), min_confidence=0.5)
     roll_filter = AngleFilter(alpha=0.12, deadzone_deg=4.0)
     pinch_filter = SignalFilter(alpha=0.25)
+    missed_frames = 0
+    RESET_AFTER_MISSES = 15  # ~0.5s of sustained loss before filters reset
     print("Ready. Palm toward Eye, dark backdrop. Press q to quit.")
     print("Roll/pinch shown as SMOOTHED (raw in console).")
 
@@ -165,6 +167,7 @@ def main() -> None:
                 fps_n = 0
 
             if tracking is not None:
+                missed_frames = 0
                 draw_hand(vis, tracking.landmarks, fist)
                 x, y, _ = tracking.wrist_position
                 roll_raw = wrist_roll_deg(tracking.landmarks)
@@ -223,8 +226,12 @@ def main() -> None:
                     )
                     last_print = now
             else:
-                roll_filter.reset()
-                pinch_filter.reset()
+                # Detection flickers frame-to-frame on the grayscale feed;
+                # resetting immediately would make smoothing a no-op.
+                missed_frames += 1
+                if missed_frames >= RESET_AFTER_MISSES:
+                    roll_filter.reset()
+                    pinch_filter.reset()
                 cv2.putText(
                     vis,
                     f"{source} | no hand | FPS {fps:.1f}",

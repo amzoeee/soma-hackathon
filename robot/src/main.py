@@ -145,6 +145,8 @@ class TeleopPipeline:
 
         self.running = True
         frame_time = 1.0 / self.settings.target_fps
+        missed_frames = 0
+        RESET_AFTER_MISSES = 15  # ~0.5s sustained loss before filters reset
         logger.info("Teleop pipeline running (press ESC to quit)")
 
         try:
@@ -171,6 +173,7 @@ class TeleopPipeline:
                 ee_target = None
                 stall_status = {}
                 if hand_detected:
+                    missed_frames = 0
                     ee_target = self.mapper.map(tracking_result)
 
                     # Smooth positions + roll/gripper (roll needs angle-aware EMA)
@@ -221,10 +224,14 @@ class TeleopPipeline:
                         if self.arm.is_connected():
                             self.arm.send_action(action)
                 else:
-                    # Don't let a reappearing hand inherit a stale roll estimate
-                    self.roll_filter.reset()
-                    self.roll_rate.reset()
-                    self.gripper_filter.reset()
+                    # Detection flickers on the grayscale feed; only reset the
+                    # filters after a sustained loss so smoothing keeps history
+                    # across single dropped frames.
+                    missed_frames += 1
+                    if missed_frames >= RESET_AFTER_MISSES:
+                        self.roll_filter.reset()
+                        self.roll_rate.reset()
+                        self.gripper_filter.reset()
 
                 # -- e. Get observation
                 observation = self.arm.get_observation() if self.arm.is_connected() else {}
