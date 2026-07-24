@@ -12,12 +12,12 @@ When autonomy needs a human, take over with your hands through AR glasses or iMe
 Send a natural-language request. Linq delivers it, Runware GPT-5.6 Luna plans an ordered tool sequence, the arm executes step-by-step, and you get a deterministic result reply.
 
 <p align="center">
-  <img src="docs/assets/imessage-agent-demo.jpg" alt="iMessage agent demo" width="720" />
+  <img src="docs/assets/imessage-agent-demo.jpg" alt="iMessage agent demo" width="260" />
 </p>
 
 <!-- Optional full video: drop docs/assets/imessage-agent-demo.mp4 and uncomment below
 <p align="center">
-  <video src="docs/assets/imessage-agent-demo.mp4" controls width="720"></video>
+  <video src="docs/assets/imessage-agent-demo.mp4" controls width="260"></video>
 </p>
 -->
 
@@ -26,13 +26,13 @@ Drive the follower SO-101 by moving a calibrated leader (driver) arm — joint-f
 
 <!--
 <p align="center">
-  <img src="docs/assets/leader-arm-teleop-demo.gif" alt="Leader arm teleop demo" width="720" />
+  <img src="docs/assets/leader-arm-teleop-demo.gif" alt="Leader arm teleop demo" width="260" />
 </p>
 -->
 
 <!-- Optional full video: drop docs/assets/leader-arm-teleop-demo.mp4 and uncomment below
 <p align="center">
-  <video src="docs/assets/leader-arm-teleop-demo.mp4" controls width="720"></video>
+  <video src="docs/assets/leader-arm-teleop-demo.mp4" controls width="260"></video>
 </p>
 -->
 
@@ -40,12 +40,12 @@ Drive the follower SO-101 by moving a calibrated leader (driver) arm — joint-f
 The agent runs a planned tool sequence end-to-end — no leader arm, no hand tracking — just Luna’s ordered calls executing on the follower.
 
 <p align="center">
-  <img src="docs/assets/automated-arm-demo.gif" alt="Automated arm demo" width="720" />
+  <img src="docs/assets/automated-arm-demo.gif" alt="Automated arm demo" width="260" />
 </p>
 
 <!-- Optional full video: drop docs/assets/automated-arm-demo.mp4 and uncomment below
 <p align="center">
-  <video src="docs/assets/automated-arm-demo.mp4" controls width="720"></video>
+  <video src="docs/assets/automated-arm-demo.mp4" controls width="260"></video>
 </p>
 -->
 
@@ -53,12 +53,12 @@ The agent runs a planned tool sequence end-to-end — no leader arm, no hand tra
 When a step fails (missed grasp, workspace clamp, tool error), execution stops, Linq reports the failure, and a human can take over.
 
 <p align="center">
-  <img src="docs/assets/failure-demo.gif" alt="Failure demo" width="720" />
+  <img src="docs/assets/failure-demo.gif" alt="Failure demo" width="260" />
 </p>
 
 <!-- Optional full video: drop docs/assets/failure-demo.mp4 and uncomment below
 <p align="center">
-  <video src="docs/assets/failure-demo.mp4" controls width="720"></video>
+  <video src="docs/assets/failure-demo.mp4" controls width="260"></video>
 </p>
 -->
 
@@ -74,7 +74,7 @@ One message can produce many ordered calls. Execution stops on the first failure
 
 <!--
 <p align="center">
-  <img src="docs/assets/tool-sequence-demo.gif" alt="Tool sequence / arm motion" width="720" />
+  <img src="docs/assets/tool-sequence-demo.gif" alt="Tool sequence / arm motion" width="260" />
 </p>
 -->
 
