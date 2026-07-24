@@ -59,7 +59,7 @@ IK_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex")
 # LeRobot gives the gripper RANGE_0_100; every other joint is DEGREES.
 GRIPPER = "gripper"
 
-MAX_CARTESIAN_STEP_M = 0.06
+MAX_CARTESIAN_STEP_M = 0.5
 
 # The so101.urdf chain is right-handed with +x forward, +y left, +z up.
 # Measured off the loaded chain (all joints at 0 deg): the tool sits at
@@ -74,7 +74,8 @@ WORKSPACE = {
 }
 
 # Ramp shape. The script uses 10s/100 steps for a full-reach absolute move;
-# agent moves are <=6cm nudges, so the same 0.05s cadence over a shorter ramp.
+# Cartesian requests may span the full configured workspace. The workspace and
+# IK reachability checks below remain the final physical bounds.
 MOVE_DURATION_S = 2.0
 MOVE_STEPS = 40
 JOINT_DURATION_S = 1.0
