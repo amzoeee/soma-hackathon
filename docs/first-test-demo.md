@@ -36,6 +36,13 @@ Hand each brief to a different coding agent. Agents **1–4 can run at the same 
 | 4 | [04-move-robot-tool.md](./first-test-demo/04-move-robot-tool.md) | Temporary `move_robot` printer | Yes |
 | 5 | [05-wire-and-verify.md](./first-test-demo/05-wire-and-verify.md) | Handler, main, end-to-end DoD | After 1–4 |
 
+## Setup and operation
+
+Use the [setup runbook](./first-test-demo/setup-runbook.md) to initialize the
+project from a fresh clone or resume an existing environment without repeating
+completed steps. It covers credentials, the local service, LocalTunnel, Linq
+webhook configuration, verification, and troubleshooting.
+
 ## Definition of Done
 
 The test is complete when:
