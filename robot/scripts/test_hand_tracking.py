@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.camera import XrealEyeCamera, WebcamFallback  # noqa: E402
-from src.tracking import HandTracker, GestureRecognizer  # noqa: E402
+from src.tracking import HandTracker  # noqa: E402
 from src.mapping.filters import AngleFilter, SignalFilter  # noqa: E402
 
 
@@ -77,10 +77,10 @@ def main() -> None:
     parser.add_argument("--webcam-index", type=int, default=0)
     args = parser.parse_args()
 
-    hand_model = ROOT / "models" / "hand_landmarker.task"
-    gesture_model = ROOT / "models" / "gesture_recognizer.task"
-    if not hand_model.is_file() or not gesture_model.is_file():
-        print("Missing models. Copy .task files into robot/models/ or run download_models.sh")
+    hand_model = ROOT / "models" / "gesture_recognizer.task"
+    if not hand_model.is_file():
+        print(f"Missing model: {hand_model}")
+        print("Copy gesture_recognizer.task into robot/models/")
         sys.exit(1)
 
     if args.webcam:
@@ -102,14 +102,17 @@ def main() -> None:
         model_path=str(hand_model),
         min_detection_confidence=0.25,
         min_tracking_confidence=0.25,
+        fist_score_threshold=0.5,
+        min_hand_size=0.06,
+        hold_frames=8,
     )
-    gestures = GestureRecognizer(model_path=str(gesture_model), min_confidence=0.5)
     roll_filter = AngleFilter(alpha=0.12, deadzone_deg=4.0)
     pinch_filter = SignalFilter(alpha=0.25)
     missed_frames = 0
     RESET_AFTER_MISSES = 15  # ~0.5s of sustained loss before filters reset
     if opened:
-        print("Ready. Palm toward Eye, dark backdrop. Press q to quit.")
+        print("Ready. Palm toward Eye, dark backdrop, fill ~1/4 of frame.")
+        print("VIDEO-mode tracking + landmark hold. Press q to quit.")
     print("Roll/pinch shown as SMOOTHED (raw in console).")
 
     win = "Hand Tracking (hackathon robot/)"
@@ -181,8 +184,8 @@ def main() -> None:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             tracking = tracker.process(gray)
-            gesture = gestures.recognize(gray)
-            fist = bool(gesture and gesture.is_clutch_active)
+            fist = bool(tracking and tracking.fist)
+            gesture_name = tracking.gesture if tracking else None
 
             fps_n += 1
             now = time.perf_counter()
@@ -199,7 +202,7 @@ def main() -> None:
                 pinch_raw = pinch_norm(tracking.landmarks)
                 roll = roll_filter.update(roll_raw)
                 pinch = pinch_filter.update(pinch_raw)
-                size = hand_size(tracking.landmarks)
+                size = tracking.hand_size or hand_size(tracking.landmarks)
 
                 cv2.putText(
                     vis,
@@ -231,7 +234,7 @@ def main() -> None:
                     1,
                     cv2.LINE_AA,
                 )
-                fist_txt = "FIST (CLUTCH ON)" if fist else f"open ({gesture.gesture_name or 'none'})"
+                fist_txt = "FIST (CLUTCH ON)" if fist else f"open ({gesture_name or 'none'})"
                 cv2.putText(
                     vis,
                     fist_txt,
@@ -247,7 +250,7 @@ def main() -> None:
                         f"hand x={x:.3f} y={y:.3f} "
                         f"roll={roll:+.1f}deg (raw={roll_raw:+.1f}) "
                         f"pinch={pinch:.3f} size={size:.3f} fist={fist} "
-                        f"gesture={gesture.gesture_name or '-'}"
+                        f"gesture={gesture_name or '-'}"
                     )
                     last_print = now
             else:
@@ -273,7 +276,6 @@ def main() -> None:
                 break
     finally:
         tracker.close()
-        gestures.close()
         cam.close()
         cv2.destroyAllWindows()
 

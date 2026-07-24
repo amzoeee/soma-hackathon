@@ -13,7 +13,7 @@ import time
 
 from config import Settings
 from src.camera import XrealEyeCamera, WebcamFallback
-from src.tracking import HandTracker, GestureRecognizer
+from src.tracking import HandTracker
 from src.mapping import HandToEEMapper, ClutchController, SignalFilter, AngleFilter, RateLimiter
 from src.ik import IKSolver
 from src.robot import ArmController, SafetyController
@@ -67,16 +67,17 @@ class TeleopPipeline:
             )
 
     def _init_tracking(self):
+        # One VIDEO-mode GestureRecognizer does landmarks + fist. Running
+        # HandLandmarker and GestureRecognizer separately in IMAGE mode was
+        # the main source of flickering skeletons on the Eye feed.
         self.hand_tracker = HandTracker(
-            model_path=self.settings.hand_model_path,
+            model_path=self.settings.gesture_model_path,
             num_hands=self.settings.num_hands,
             min_detection_confidence=self.settings.min_detection_confidence,
             min_tracking_confidence=self.settings.min_tracking_confidence,
+            fist_score_threshold=self.settings.min_gesture_confidence,
         )
-        self.gesture_recognizer = GestureRecognizer(
-            model_path=self.settings.gesture_model_path,
-            min_confidence=self.settings.min_gesture_confidence,
-        )
+        self.gesture_recognizer = None  # clutch comes from hand_tracker.fist
 
     def _init_mapping(self):
         hand_box = {
@@ -169,13 +170,13 @@ class TeleopPipeline:
                     time.sleep(0.001)
                     continue
 
-                # -- b. Hand tracking
+                # -- b. Hand tracking (landmarks + fist in one VIDEO-mode pass)
                 tracking_result = self.hand_tracker.process(frame)
                 hand_detected = tracking_result is not None
+                clutch_active = bool(tracking_result.fist) if tracking_result else False
+                gesture_name = tracking_result.gesture if tracking_result else None
 
-                # -- c. Gesture recognition (clutch)
-                gesture_result = self.gesture_recognizer.recognize(frame)
-                clutch_active = gesture_result.is_clutch_active if gesture_result else False
+                # -- c. (gesture/clutch folded into tracking_result above)
 
                 # -- d. If hand detected, map -> clutch -> IK -> send
                 action = None
@@ -257,7 +258,7 @@ class TeleopPipeline:
                     hand_detected=hand_detected,
                     fps=fps,
                     stall_warnings=stall_status if hand_detected and action else {},
-                    gesture=gesture_result.gesture_name if gesture_result else None,
+                    gesture=gesture_name,
                 )
                 self.overlay.update(state)
                 self.overlay.show()
@@ -290,7 +291,8 @@ class TeleopPipeline:
         except Exception:
             pass
         try:
-            self.gesture_recognizer.close()
+            if self.gesture_recognizer is not None:
+                self.gesture_recognizer.close()
         except Exception:
             pass
         try:
