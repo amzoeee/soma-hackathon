@@ -55,8 +55,15 @@ soma-hackathon/
 │   ├── robot/
 │   │   ├── arm_controller.py    # LeRobot SO-101 send_action / get_observation
 │   │   └── safety.py            # Joint clamping + stall detection
-│   └── overlay/
-│       └── status_display.py    # OpenCV status overlay for glasses
+│   ├── overlay/
+│   │   └── status_display.py    # OpenCV status overlay for glasses
+│   └── linq/                    # Chat control: message → LangGraph → actions
+│       ├── run.py               # Entry point (python -m src.linq.run)
+│       ├── graph.py             # LangGraph wiring
+│       ├── actions.py           # Action vocabulary + JSON schema
+│       ├── nodes/               # understand → validate → execute → respond
+│       ├── executor.py          # Actions → IK → safety → arm
+│       └── channels/            # Inbound transports (CLI today)
 ├── scripts/
 │   ├── calibrate.sh             # lerobot-calibrate wrapper
 │   ├── download_models.sh       # Download MediaPipe model files
@@ -135,6 +142,26 @@ python scripts/test_camera.py --webcam
 ```
 
 Press **ESC** to quit.
+
+## Messaging Linq (chat control)
+
+A second control path, independent of hand tracking: message the arm in plain
+language and a LangGraph pipeline turns it into a validated action plan.
+
+```bash
+export ANTHROPIC_API_KEY=...   # or: ant auth login
+python -m src.linq.run         # dry-run — logs actions, arm never moves
+python -m src.linq.run --live --port /dev/ttyACM0
+```
+
+```
+you>  pick up the cube and lift it 10cm
+linq> Reaching for it. [dry-run]
+```
+
+`understand` (Claude) → `validate` (envelope + limits) → `execute` (IK → safety
+→ arm) → `respond`. Validation is deterministic and fails closed, so a bad plan
+never reaches the motors. See [src/linq/README.md](src/linq/README.md).
 
 ## Controls
 
