@@ -14,7 +14,7 @@ import time
 from config import Settings
 from src.camera import XrealEyeCamera, WebcamFallback
 from src.tracking import HandTracker, GestureRecognizer
-from src.mapping import HandToEEMapper, ClutchController, SignalFilter
+from src.mapping import HandToEEMapper, ClutchController, SignalFilter, AngleFilter, RateLimiter
 from src.ik import IKSolver
 from src.robot import ArmController, SafetyController
 from src.overlay import StatusOverlay
@@ -103,6 +103,12 @@ class TeleopPipeline:
         self.pos_filter_x = SignalFilter(alpha=self.settings.position_filter_alpha)
         self.pos_filter_y = SignalFilter(alpha=self.settings.position_filter_alpha)
         self.pos_filter_z = SignalFilter(alpha=self.settings.z_filter_alpha)
+        self.roll_filter = AngleFilter(
+            alpha=self.settings.roll_filter_alpha,
+            deadzone_deg=self.settings.roll_deadzone_deg,
+        )
+        self.roll_rate = RateLimiter(max_delta=self.settings.roll_max_delta_deg)
+        self.gripper_filter = SignalFilter(alpha=self.settings.gripper_filter_alpha)
 
     def _init_ik(self):
         self.ik_solver = IKSolver(urdf_path=self.settings.urdf_path)
@@ -163,13 +169,16 @@ class TeleopPipeline:
                 # -- d. If hand detected, map -> clutch -> IK -> send
                 action = None
                 ee_target = None
+                stall_status = {}
                 if hand_detected:
                     ee_target = self.mapper.map(tracking_result)
 
-                    # Smooth positions
+                    # Smooth positions + roll/gripper (roll needs angle-aware EMA)
                     ee_target.x = self.pos_filter_x.update(ee_target.x)
                     ee_target.y = self.pos_filter_y.update(ee_target.y)
                     ee_target.z = self.pos_filter_z.update(ee_target.z)
+                    ee_target.wrist_roll = self.roll_filter.update(ee_target.wrist_roll)
+                    ee_target.gripper = self.gripper_filter.update(ee_target.gripper)
 
                     # Clutch logic
                     hand_pos = (
@@ -180,6 +189,9 @@ class TeleopPipeline:
                     adjusted = self.clutch.update(clutch_active, ee_target, hand_pos)
 
                     if adjusted is not None:
+                        # Rate-limit wrist roll so even a filtered step can't snap
+                        adjusted.wrist_roll = self.roll_rate.update(adjusted.wrist_roll)
+
                         # IK solve for the 4 arm joints
                         current_angles = self.arm.get_joint_angles() if self.arm.is_connected() else None
                         ik_result = self.ik_solver.solve(
@@ -208,6 +220,11 @@ class TeleopPipeline:
                         # Send to robot
                         if self.arm.is_connected():
                             self.arm.send_action(action)
+                else:
+                    # Don't let a reappearing hand inherit a stale roll estimate
+                    self.roll_filter.reset()
+                    self.roll_rate.reset()
+                    self.gripper_filter.reset()
 
                 # -- e. Get observation
                 observation = self.arm.get_observation() if self.arm.is_connected() else {}

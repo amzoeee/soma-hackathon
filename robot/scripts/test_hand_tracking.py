@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.camera import XrealEyeCamera, WebcamFallback  # noqa: E402
 from src.tracking import HandTracker, GestureRecognizer  # noqa: E402
+from src.mapping.filters import AngleFilter, SignalFilter  # noqa: E402
 
 
 # MediaPipe hand skeleton connections (landmark index pairs)
@@ -100,7 +101,10 @@ def main() -> None:
         min_tracking_confidence=0.25,
     )
     gestures = GestureRecognizer(model_path=str(gesture_model), min_confidence=0.5)
+    roll_filter = AngleFilter(alpha=0.12, deadzone_deg=4.0)
+    pinch_filter = SignalFilter(alpha=0.25)
     print("Ready. Palm toward Eye, dark backdrop. Press q to quit.")
+    print("Roll/pinch shown as SMOOTHED (raw in console).")
 
     win = "Hand Tracking (hackathon robot/)"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -163,8 +167,10 @@ def main() -> None:
             if tracking is not None:
                 draw_hand(vis, tracking.landmarks, fist)
                 x, y, _ = tracking.wrist_position
-                roll = wrist_roll_deg(tracking.landmarks)
-                pinch = pinch_norm(tracking.landmarks)
+                roll_raw = wrist_roll_deg(tracking.landmarks)
+                pinch_raw = pinch_norm(tracking.landmarks)
+                roll = roll_filter.update(roll_raw)
+                pinch = pinch_filter.update(pinch_raw)
                 size = hand_size(tracking.landmarks)
 
                 cv2.putText(
@@ -189,7 +195,7 @@ def main() -> None:
                 )
                 cv2.putText(
                     vis,
-                    f"roll {roll:+.1f} deg   pinch {pinch:.2f}   size {size:.3f}",
+                    f"roll {roll:+.1f} deg (raw {roll_raw:+.0f})   pinch {pinch:.2f}   size {size:.3f}",
                     (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.55,
@@ -210,12 +216,15 @@ def main() -> None:
                 )
                 if now - last_print > 0.5:
                     print(
-                        f"hand x={x:.3f} y={y:.3f} roll={roll:+.1f}deg "
+                        f"hand x={x:.3f} y={y:.3f} "
+                        f"roll={roll:+.1f}deg (raw={roll_raw:+.1f}) "
                         f"pinch={pinch:.3f} size={size:.3f} fist={fist} "
                         f"gesture={gesture.gesture_name or '-'}"
                     )
                     last_print = now
             else:
+                roll_filter.reset()
+                pinch_filter.reset()
                 cv2.putText(
                     vis,
                     f"{source} | no hand | FPS {fps:.1f}",

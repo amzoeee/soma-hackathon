@@ -40,6 +40,13 @@ class Settings:
     z_clamp_range: Tuple[float, float] = (0.05, 0.35)
     position_filter_alpha: float = 0.2
     deadzone_threshold: float = 0.005
+    # Wrist roll is the noisiest channel (landmark geometry on grayscale).
+    # Low alpha + deadzone = arm doesn't twitch from jitter; intentional
+    # twists still come through after a beat.
+    roll_filter_alpha: float = 0.12
+    roll_deadzone_deg: float = 4.0
+    roll_max_delta_deg: float = 3.0   # per-frame rate limit on wrist_roll.pos
+    gripper_filter_alpha: float = 0.25
     
     # Robot (Windows: COMx, Linux: /dev/ttyACM0)
     robot_port: str = 'COM5'
