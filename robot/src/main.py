@@ -160,7 +160,7 @@ class TeleopPipeline:
                 angles = self.arm.get_joint_angles()
                 obs = self.arm.get_observation() or {}
                 hx, hy, hz = self.ik_solver.forward_kinematics(angles)
-                wrist_roll = 90.0  # locked to horizontal
+                wrist_roll = 0.0  # locked to horizontal
                 gripper01 = float(obs.get("gripper.pos", 100.0)) / 100.0
                 self.teleop.seed_pose(
                     hx, hy, hz, wrist_roll=wrist_roll, gripper=gripper01
@@ -211,7 +211,7 @@ class TeleopPipeline:
                 wy = self._clamp(target.y, *self.workspace["y"])
                 wz = self._clamp(target.z, *self.workspace["z"])
                 ee_xyz = (wx, wy, wz)
-                wrist_roll = 90.0  # locked to horizontal (90 deg)
+                wrist_roll = self.roll_rate.update(target.wrist_roll)
                 gripper = max(0.0, min(100.0, target.gripper * 100.0))
 
                 current_angles = (
