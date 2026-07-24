@@ -1,10 +1,11 @@
 # Agent
 
-## First test demo
+The demo receives a Linq iMessage, asks Runware GPT-5.6 Luna to translate the
+complete request into an ordered robot-tool sequence, executes the tools in
+order, and sends a deterministic result summary to the same Linq chat.
+Model-authored prose is never returned through iMessage.
 
-The first-test path receives a Linq iMessage, asks Runware GPT-5.6 Luna to
-interpret supported movement commands, prints a simulated robot command, and
-sends the confirmation back to the same Linq chat.
+## Setup
 
 1. Install dependencies:
 
@@ -18,8 +19,7 @@ sends the confirmation back to the same Linq chat.
    cp .env.example .env
    ```
 
-   The module entrypoint accepts `.env` in either the repository root or the
-   `agent/` directory.
+   The entrypoint accepts `.env` in either the repository root or `agent/`.
 
 3. Start the service:
 
@@ -28,23 +28,18 @@ sends the confirmation back to the same Linq chat.
    PYTHONPATH=src python -m demo.main
    ```
 
-4. In another terminal, expose it publicly:
+4. Start LocalTunnel in another terminal:
 
    ```bash
-   ngrok http 8000
+   npx --yes localtunnel --port 8000
    ```
 
-5. Set `PUBLIC_BASE_URL` to the HTTPS tunnel origin. Configure a Linq
+5. Set `PUBLIC_BASE_URL` to the HTTPS tunnel origin and configure a Linq
    `message.received` webhook at:
 
    ```text
    https://<tunnel>/webhooks/linq?version=2026-02-03
    ```
-
-6. Send test messages such as `move forward 2 meters`, `move backward 1
-   meter`, `turn left`, `turn right 45 degrees`, and `stop`. An unsupported
-   message such as `what's the weather?` should receive a polite refusal
-   without printing a robot movement.
 
 Check service health with:
 
@@ -52,61 +47,42 @@ Check service health with:
 curl http://localhost:8000/health
 ```
 
-The current movement adapter only prints commands. To connect the real robot,
-replace the execution body in `src/demo/tools/move_robot.py`; keep its schema,
-function signature, and result shape unchanged so the webhook and LLM layers
-do not need modification.
+## Robot tools
 
-## Terac confirm-then-act
+The model can emit multiple calls in one response. Calls execute sequentially
+and the sequence stops on the first failure.
 
-Before complex or uncertain movements, the agent can pause and ask a verified
-professional via [Terac](https://terac.com/mcp). On approval the pending
-`move_robot` runs; on rejection the robot does not move. AR glasses hand
-teleop recovery is **not** part of this slice — see
-`docs/future-product-plan.md` for that path.
+- `move_cartesian(delta_x_m, delta_y_m, delta_z_m)` — differential IK motion;
+  `+x` right, `+y` forward, `+z` up.
+- `move_wrist(pitch_degrees, roll_degrees)` — differential wrist motion; each
+  motor accepts `-160` through `+160` degrees.
+- `set_gripper(state)` — set the calibrated endpoint to `open` or `closed`.
+- `hold_position()` — stop motion and hold the current pose.
 
-### Dry-run demo (no Terac credentials)
+For a retrace request, the planner emits inverse Cartesian and wrist calls in
+reverse order. Gripper operations are changed only when the user explicitly
+requests them.
 
-```bash
-# in agent/.env
-TERAC_DRY_RUN=true
-TERAC_DRY_RUN_DECISION=approve   # or reject
-TERAC_REQUIRE_CONFIRMATION=true
-```
-
-1. Start the demo as usual (`PYTHONPATH=src python -m demo.main`).
-2. Send `move forward 2 meters` over Linq (or call the LLM path locally).
-3. With `approve`, expect a `ROBOT: move forward 2m` print and a confirmation
-   reply. With `reject`, expect no robot print and a declined-action reply.
-
-When `TERAC_REQUIRE_CONFIRMATION=false`, simple moves can still call
-`move_robot` directly; the LLM may still escalate ambiguous commands via
-`request_professional_confirmation`.
-
-### Live Terac
-
-```bash
-TERAC_DRY_RUN=false
-TERAC_API_KEY=...
-TERAC_PROJECT_ID=...          # if required by your org
-TERAC_WEBHOOK_SECRET=...      # optional shared secret / HMAC
-TERAC_REQUIRE_CONFIRMATION=true
-```
-
-Point Terac submission webhooks at:
+Example:
 
 ```text
-https://<tunnel>/webhooks/terac
+Move up 100 cm, roll wrist right 90 degrees, open the gripper, move forward
+20 cm, close the gripper, retrace to the original position, then open it.
 ```
 
-Live flow: confirmation launches an opportunity → agent replies that the robot
-is paused → Terac webhook (or later poll) resumes → approved actions execute
-and Linq gets a follow-up. Exact REST body fields may need a quick check
-against Terac’s OpenAPI for your account.
+This plans nine ordered calls: up, wrist right, open, forward, close, backward,
+wrist left, down, open.
 
-To poll manually during demos (instead of waiting on a webhook):
+## Deterministic Linq replies
 
-```bash
-curl -X POST http://localhost:8000/webhooks/terac/poll/<opportunity_id>
+The application ignores model-authored response text. It builds the iMessage
+from structured tool results:
+
+```text
+Executed 2 robot actions:
+1. [OK] Cartesian IK applied Δx=+0m, Δy=+0.2m, Δz=+0m.
+2. [OK] Gripper set to closed.
 ```
 
+When hardware safety or workspace limits reduce a requested differential, the
+reply reports both the requested and applied XYZ values.

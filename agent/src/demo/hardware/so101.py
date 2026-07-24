@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -26,9 +27,8 @@ TICKS_PER_DEGREE = TICKS_PER_REV / 360.0
 DEFAULT_BAUD = 1_000_000
 DEFAULT_ACCEL = 60
 DEFAULT_GOAL_SPEED = 450
-TICKS_PER_METER = 220
-MAX_TRANSLATION_TICKS = 300
-MAX_TURN_TICKS = 340
+MIN_WRIST_DEGREES = -160.0
+MAX_WRIST_DEGREES = 160.0
 
 DEFAULT_JOINT_IDS = {
     "shoulder_pan": 1,
@@ -344,6 +344,26 @@ class SO101Arm:
                 "range": [cal.range_min, cal.range_max],
             }
 
+    def set_gripper(self, state: str) -> dict[str, Any]:
+        """Move the gripper to its calibrated open or closed endpoint."""
+        with self._lock:
+            self._ensure()
+            cal = self.calibration["gripper"]
+            before = self._read_pos(cal.motor_id)
+            goal = cal.range_max if state == "open" else cal.range_min
+            self._set_goal(cal, goal)
+            time.sleep(0.3)
+            measured = self._read_pos(cal.motor_id)
+            moved = abs(measured - before) >= 6 or abs(goal - before) < 6
+            return {
+                "state": state,
+                "before": before,
+                "goal": goal,
+                "measured": measured,
+                "moved": moved,
+                "range": [cal.range_min, cal.range_max],
+            }
+
     def hold(self) -> dict[str, Any]:
         with self._lock:
             self._ensure()
@@ -409,20 +429,34 @@ class SO101Arm:
             )
             solution = self._ik.solve(target, current_angles=current)
             result = self.set_ik_joint_degrees(solution)
+            measured_ticks = result.get("measured_ticks", {})
+            measured_angles = [
+                ticks_to_degrees(
+                    self.calibration[name],
+                    int(measured_ticks.get(name, 0)),
+                )
+                for name in IK_JOINTS
+            ]
+            measured_xyz = self._ik.forward_kinematics(measured_angles)
             logger.info(
-                "IK cartesian (%.3f,%.3f,%.3f) → (%.3f,%.3f,%.3f) joints=%s",
+                "IK cartesian (%.3f,%.3f,%.3f) → target (%.3f,%.3f,%.3f) "
+                "measured (%.3f,%.3f,%.3f) joints=%s",
                 x,
                 y,
                 z,
                 target[0],
                 target[1],
                 target[2],
+                measured_xyz[0],
+                measured_xyz[1],
+                measured_xyz[2],
                 {k: round(v, 1) for k, v in solution.items()},
             )
             return {
                 "mode": "ik",
                 "from_xyz": (x, y, z),
                 "to_xyz": target,
+                "measured_xyz": measured_xyz,
                 "delta_xyz": (dx, dy, dz),
                 "joints_deg": solution,
                 "command": result,
@@ -459,100 +493,140 @@ def get_arm(
         return _arm
 
 
-def _clamp_ticks(ticks: int, limit: int) -> int:
-    return max(-limit, min(limit, int(ticks)))
+def _limit_cartesian_delta(
+    delta_x_m: float,
+    delta_y_m: float,
+    delta_z_m: float,
+) -> tuple[float, float, float]:
+    """Limit a vector while preserving its XYZ direction."""
+    requested = (float(delta_x_m), float(delta_y_m), float(delta_z_m))
+    magnitude = math.sqrt(sum(value * value for value in requested))
+    if magnitude <= MAX_CARTESIAN_STEP_M:
+        return requested
+    scale = MAX_CARTESIAN_STEP_M / magnitude
+    return tuple(value * scale for value in requested)  # type: ignore[return-value]
 
 
-def _ticks_from_degrees(degrees: float | None, default: float, limit: int = MAX_TURN_TICKS) -> int:
-    value = float(degrees if degrees is not None else default)
-    return _clamp_ticks(int(round(value * TICKS_PER_DEGREE)), limit)
-
-
-def _cartesian_step_m(distance_meters: float | None) -> float:
-    meters = abs(float(distance_meters or 0.05))
-    # Text distances are often large (0.2–1m); clamp to a safe EE step.
-    return max(0.015, min(MAX_CARTESIAN_STEP_M, meters if meters <= MAX_CARTESIAN_STEP_M else MAX_CARTESIAN_STEP_M))
-
-
-# Joint-space only for wrist / gripper. Spatial moves use IK.
-_JOINT_ONLY: dict[str, tuple[str, int]] = {
-    "tilt_up": ("wrist_flex", +1),
-    "tilt_down": ("wrist_flex", -1),
-    "roll_left": ("wrist_roll", +1),
-    "roll_right": ("wrist_roll", -1),
-    "open": ("gripper", +1),
-    "close": ("gripper", -1),
-}
-
-
-def apply_move(
+def apply_cartesian_delta(
     *,
     port: str,
-    direction: str,
-    distance_meters: float | None,
-    angle_degrees: float | None,
+    delta_x_m: float,
+    delta_y_m: float,
+    delta_z_m: float,
     calibration_path: str | Path | None = None,
     urdf_path: str | Path | None = None,
 ) -> dict[str, Any]:
     arm = get_arm(port, calibration_path, urdf_path)
     arm.connect()
 
-    if direction == "stop":
-        return {"ok": True, "detail": arm.hold()}
+    requested = (float(delta_x_m), float(delta_y_m), float(delta_z_m))
+    commanded = _limit_cartesian_delta(*requested)
+    try:
+        detail = arm.move_cartesian(
+            dx=commanded[0],
+            dy=commanded[1],
+            dz=commanded[2],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("IK move failed")
+        return {"ok": False, "detail": {"error": f"ik failed: {exc}"}}
 
-    # Cartesian IK path — drives shoulder_lift AND elbow_flex as separate servos.
-    if direction in {"forward", "backward", "up", "down", "left", "right"}:
-        step = _cartesian_step_m(distance_meters)
-        if direction in {"left", "right"}:
-            # Convert turn angle into a sideways EE step at ~current reach.
-            degrees = float(angle_degrees if angle_degrees is not None else 30.0)
-            step = max(0.015, min(MAX_CARTESIAN_STEP_M, abs(degrees) / 90.0 * 0.06))
+    from_xyz = detail.get("from_xyz", (0.0, 0.0, 0.0))
+    measured_xyz = detail.get("measured_xyz", detail.get("to_xyz", from_xyz))
+    applied = tuple(float(measured_xyz[i]) - float(from_xyz[i]) for i in range(3))
+    changed = any(
+        abs(joint_info.get("goal_ticks", 0) - joint_info.get("before_ticks", 0)) >= 6
+        for joint_info in detail.get("command", {}).get("applied", {}).values()
+    )
+    detail.update(
+        {
+            "requested_delta_xyz": requested,
+            "commanded_delta_xyz": commanded,
+            "applied_delta_xyz": applied,
+            "moved": changed,
+        }
+    )
+    return {"ok": changed, "detail": detail}
 
-        dx = dy = dz = 0.0
-        if direction == "forward":
-            dy = +step
-        elif direction == "backward":
-            dy = -step
-        elif direction == "up":
-            dz = +step
-        elif direction == "down":
-            dz = -step
-        elif direction == "left":
-            dx = -step  # flipped to match prior left/right feedback
-        elif direction == "right":
-            dx = +step
 
-        try:
-            detail = arm.move_cartesian(dx=dx, dy=dy, dz=dz)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("IK move failed")
-            return {"ok": False, "detail": {"error": f"ik failed: {exc}"}}
+def apply_wrist_delta(
+    *,
+    port: str,
+    pitch_degrees: float,
+    roll_degrees: float,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Apply differential wrist pitch and roll, each bounded to ±160 degrees."""
+    pitch = float(pitch_degrees)
+    roll = float(roll_degrees)
+    if not MIN_WRIST_DEGREES <= pitch <= MAX_WRIST_DEGREES:
+        return {"ok": False, "detail": {"error": "pitch must be between -160 and +160"}}
+    if not MIN_WRIST_DEGREES <= roll <= MAX_WRIST_DEGREES:
+        return {"ok": False, "detail": {"error": "roll must be between -160 and +160"}}
 
-        # Did any IK joint actually change?
-        changed = False
-        for joint_info in detail.get("command", {}).get("applied", {}).values():
-            if abs(joint_info.get("goal_ticks", 0) - joint_info.get("before_ticks", 0)) >= 6:
-                changed = True
-                break
-        detail["moved"] = changed
-        return {"ok": True, "detail": detail}
+    arm = get_arm(port, calibration_path, urdf_path)
+    arm.connect()
+    results: dict[str, Any] = {}
+    if abs(pitch) > 1e-9:
+        pitch_ticks = int(round(pitch * TICKS_PER_DEGREE))
+        results["pitch"] = arm.nudge_joint("wrist_flex", pitch_ticks)
+    if abs(roll) > 1e-9:
+        # Public convention is +roll right; this servo's positive tick direction is left.
+        roll_ticks = int(round(-roll * TICKS_PER_DEGREE))
+        results["roll"] = arm.nudge_joint("wrist_roll", roll_ticks)
+    moved = all(result.get("moved", False) for result in results.values())
+    applied_pitch = 0.0
+    if "pitch" in results:
+        result = results["pitch"]
+        cal = arm.calibration["wrist_flex"]
+        applied_pitch = (
+            cal.sign
+            * (float(result["measured"]) - float(result["before"]))
+            / TICKS_PER_DEGREE
+        )
+    applied_roll = 0.0
+    if "roll" in results:
+        result = results["roll"]
+        cal = arm.calibration["wrist_roll"]
+        applied_roll = (
+            -cal.sign
+            * (float(result["measured"]) - float(result["before"]))
+            / TICKS_PER_DEGREE
+        )
+    return {
+        "ok": moved,
+        "detail": {
+            "requested": {"pitch_degrees": pitch, "roll_degrees": roll},
+            "applied": {
+                "pitch_degrees": applied_pitch,
+                "roll_degrees": applied_roll,
+            },
+            "joints": results,
+            "moved": moved,
+        },
+    }
 
-    mapping = _JOINT_ONLY.get(direction)
-    if mapping is None:
-        return {"ok": False, "detail": {"error": f"unsupported direction {direction!r}"}}
 
-    joint, sign = mapping
-    if direction in {"open", "close"}:
-        cal = arm.calibration["gripper"]
-        span = abs(cal.range_max - cal.range_min)
-        step = max(80, min(MAX_TURN_TICKS, span // 5))
-        ticks = sign * step
-    else:
-        ticks = sign * _ticks_from_degrees(angle_degrees, 20.0)
+def apply_gripper_state(
+    *,
+    port: str,
+    state: str,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    if state not in {"open", "closed"}:
+        return {"ok": False, "detail": {"error": "state must be open or closed"}}
+    arm = get_arm(port, calibration_path, urdf_path)
+    detail = arm.set_gripper(state)
+    return {"ok": bool(detail.get("moved")), "detail": detail}
 
-    detail = arm.nudge_joint(joint, ticks)
-    if not detail.get("moved"):
-        bigger = int(ticks * 1.6) if ticks else 80 * (1 if sign >= 0 else -1)
-        detail = arm.nudge_joint(joint, bigger)
-        detail["retried"] = True
-    return {"ok": bool(detail.get("moved", True)), "detail": detail}
+
+def apply_hold_position(
+    *,
+    port: str,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    arm = get_arm(port, calibration_path, urdf_path)
+    return {"ok": True, "detail": arm.hold()}

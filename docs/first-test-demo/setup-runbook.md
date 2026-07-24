@@ -11,9 +11,9 @@ iMessage
   → Linq
   → public HTTPS tunnel
   → POST /webhooks/linq
-  → Runware GPT-5.6 Luna
-  → move_robot
-  → Linq reply
+  → Runware GPT-5.6 Luna (one ordered planning pass)
+  → explicit robot tools
+  → deterministic Linq reply
 ```
 
 ## Rules for the setup agent
@@ -437,15 +437,14 @@ Send one low-risk test iMessage to the number returned by
 `linq phonenumbers --json`, for example:
 
 ```text
-stop
+hold
 ```
 
 Expected service behavior:
 
 ```text
 POST /webhooks/linq ... 200 OK
-Calling tool move_robot with arguments {'direction': 'stop'}
-ROBOT: stop
+Executing robot step 1/1: hold_position {}
 POST .../chats/<chat-id>/messages ... 2xx
 ```
 
@@ -457,7 +456,8 @@ Then verify one unsupported message:
 What's the weather?
 ```
 
-It should return a polite refusal and must not print a `ROBOT:` movement line.
+It should return the fixed supported-actions reply and must not execute a robot
+tool.
 
 ## 11. Troubleshooting
 
