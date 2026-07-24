@@ -53,7 +53,7 @@ class IkpyIK:
         from ikpy.chain import Chain
 
         ik = config.get("ik", config)
-        urdf = Path(ik.get("urdf_path", "assets/so101.urdf"))
+        urdf = Path(ik.get("urdf_path", "../../robot/config/so101.urdf"))
         if not urdf.is_absolute():
             urdf = (root or Path.cwd()) / urdf
         if not urdf.is_file():
