@@ -1,12 +1,8 @@
 # First Test Demo
 
-## Purpose
-
 Prove the complete messaging and AI tool-call stack before the robot team's movement API is ready.
 
 An operator sends a basic movement request through iMessage. Linq delivers the message to our service, Runware-hosted GPT-5.6 Luna translates it into a robot tool call, and a temporary robot adapter prints the requested movement. The service then replies in the same iMessage conversation.
-
-## Demo Flow
 
 ```text
 iMessage
@@ -27,28 +23,18 @@ Terminal: ROBOT: move forward 2m
 Reply: Moving forward 2 meters
 ```
 
-## Initial Scope
+## Parallel agent briefs
 
-The demo supports:
+Hand each brief to a different coding agent. Agents **1–4 can run at the same time**. Agent 5 starts after those land (or stubs the imports and merges last).
 
-- Move forward or backward by a requested distance
-- Turn left or right
-- Stop
-- Report an unknown or unsupported request
-
-The temporary `move_robot` tool only prints the intended command and returns a simulated successful result. Its interface should be kept stable so its implementation can later be replaced with the robot team's Python function or HTTP API.
-
-## Stack
-
-- Linq for receiving and sending iMessages
-- FastAPI and Uvicorn for the webhook service
-- Runware's OpenAI-compatible API
-- GPT-5.6 Luna for command interpretation and tool selection
-- Pydantic for command validation
-- HTTPX for Linq and future robot API calls
-- ngrok or another tunnel to expose the local webhook during development
-
-LangGraph, LangChain, a database, and a job queue are not required for this test.
+| Order | Brief | Owns | Parallel? |
+|---|---|---|---|
+| Shared | [00-shared-contracts.md](./first-test-demo/00-shared-contracts.md) | Interfaces only — read first | All agents read this |
+| 1 | [01-fastapi-skeleton.md](./first-test-demo/01-fastapi-skeleton.md) | App shell, config, deps | Yes |
+| 2 | [02-linq-channel.md](./first-test-demo/02-linq-channel.md) | Linq receive + send | Yes |
+| 3 | [03-llm-runware.md](./first-test-demo/03-llm-runware.md) | GPT-5.6 Luna tool calling | Yes |
+| 4 | [04-move-robot-tool.md](./first-test-demo/04-move-robot-tool.md) | Temporary `move_robot` printer | Yes |
+| 5 | [05-wire-and-verify.md](./first-test-demo/05-wire-and-verify.md) | Handler, main, end-to-end DoD | After 1–4 |
 
 ## Definition of Done
 
@@ -63,3 +49,5 @@ The test is complete when:
 ## Next Integration Step
 
 When the movement API becomes available, replace the temporary tool's printed response with a call to the robot API. The Linq webhook, LLM integration, and tool schema should remain unchanged.
+
+LangGraph, LangChain, a database, and a job queue are not required for this test. Do not reuse or modify the existing LangGraph arm pipeline under `agent/src/linq/` for this demo.
