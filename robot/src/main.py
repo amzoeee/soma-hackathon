@@ -14,7 +14,7 @@ import time
 from config import Settings
 from src.camera import XrealEyeCamera, WebcamFallback
 from src.tracking import HandTracker
-from src.mapping import HandToEEMapper, ClutchController, SignalFilter, AngleFilter, RateLimiter
+from src.mapping import RelativeTeleop, RateLimiter
 from src.ik import IKSolver
 from src.robot import ArmController, SafetyController
 from src.overlay import StatusOverlay
@@ -80,36 +80,32 @@ class TeleopPipeline:
         self.gesture_recognizer = None  # clutch comes from hand_tracker.fist
 
     def _init_mapping(self):
-        hand_box = {
-            "x_min": self.settings.hand_box_x_min,
-            "x_max": self.settings.hand_box_x_max,
-            "y_min": self.settings.hand_box_y_min,
-            "y_max": self.settings.hand_box_y_max,
-        }
-        workspace_bounds = {
-            "x_min": self.settings.workspace_x_min,
-            "x_max": self.settings.workspace_x_max,
-            "y_min": self.settings.workspace_y_min,
-            "y_max": self.settings.workspace_y_max,
-            "z_min": self.settings.workspace_z_min,
-            "z_max": self.settings.workspace_z_max,
-        }
-        self.mapper = HandToEEMapper(
-            hand_box=hand_box,
-            workspace_bounds=workspace_bounds,
+        # Relative teleop owns smoothing + fist clutch. Target starts at
+        # (0,0,0); we add home_* and clamp into workspace before IK.
+        self.teleop = RelativeTeleop(
+            scale_x=self.settings.teleop_scale_x,
+            scale_y=self.settings.teleop_scale_y,
+            scale_z=self.settings.teleop_scale_z,
+            roll_scale=self.settings.teleop_roll_scale,
+            pos_filter_alpha=self.settings.position_filter_alpha,
             z_filter_alpha=self.settings.z_filter_alpha,
-            z_clamp_range=self.settings.z_clamp_range,
-        )
-        self.clutch = ClutchController()
-        self.pos_filter_x = SignalFilter(alpha=self.settings.position_filter_alpha)
-        self.pos_filter_y = SignalFilter(alpha=self.settings.position_filter_alpha)
-        self.pos_filter_z = SignalFilter(alpha=self.settings.z_filter_alpha)
-        self.roll_filter = AngleFilter(
-            alpha=self.settings.roll_filter_alpha,
-            deadzone_deg=self.settings.roll_deadzone_deg,
+            xy_deadband=self.settings.xy_deadband,
+            z_deadband=self.settings.z_deadband,
+            roll_filter_alpha=self.settings.roll_filter_alpha,
+            roll_deadzone_deg=self.settings.roll_deadzone_deg,
+            gripper_filter_alpha=self.settings.gripper_filter_alpha,
         )
         self.roll_rate = RateLimiter(max_delta=self.settings.roll_max_delta_deg)
-        self.gripper_filter = SignalFilter(alpha=self.settings.gripper_filter_alpha)
+        self.home = (
+            self.settings.home_x,
+            self.settings.home_y,
+            self.settings.home_z,
+        )
+        self.workspace = {
+            "x": (self.settings.workspace_x_min, self.settings.workspace_x_max),
+            "y": (self.settings.workspace_y_min, self.settings.workspace_y_max),
+            "z": (self.settings.workspace_z_min, self.settings.workspace_z_max),
+        }
 
     def _init_ik(self):
         self.ik_solver = IKSolver(urdf_path=self.settings.urdf_path)
@@ -155,8 +151,6 @@ class TeleopPipeline:
 
         self.running = True
         frame_time = 1.0 / self.settings.target_fps
-        missed_frames = 0
-        RESET_AFTER_MISSES = 15  # ~0.5s sustained loss before filters reset
         logger.info("Teleop pipeline running (press ESC to quit)")
 
         try:
@@ -173,78 +167,53 @@ class TeleopPipeline:
                 # -- b. Hand tracking (landmarks + fist in one VIDEO-mode pass)
                 tracking_result = self.hand_tracker.process(frame)
                 hand_detected = tracking_result is not None
-                clutch_active = bool(tracking_result.fist) if tracking_result else False
                 gesture_name = tracking_result.gesture if tracking_result else None
 
-                # -- c. (gesture/clutch folded into tracking_result above)
+                # -- c/d. Relative teleop (smoothing + fist clutch) -> home
+                # offset -> workspace clamp -> IK -> safety -> send
+                target = self.teleop.update(tracking_result)
+                clutch_active = target.clutched
 
-                # -- d. If hand detected, map -> clutch -> IK -> send
-                action = None
-                ee_target = None
+                # Never snap to home on a brief miss — hold last pose.
+                hx, hy, hz = self.home
+                wx = self._clamp(hx + target.x, *self.workspace["x"])
+                wy = self._clamp(hy + target.y, *self.workspace["y"])
+                wz = self._clamp(hz + target.z, *self.workspace["z"])
+                ee_xyz = (wx, wy, wz)
+                wrist_roll = self.roll_rate.update(target.wrist_roll)
+                gripper = max(0.0, min(100.0, target.gripper * 100.0))
+
+                current_angles = (
+                    self.arm.get_joint_angles() if self.arm.is_connected() else None
+                )
+                ik_result = self.ik_solver.solve(
+                    target_position=ee_xyz,
+                    current_angles=current_angles,
+                )
+                action = {
+                    "shoulder_pan.pos": ik_result.get("shoulder_pan", 0.0),
+                    "shoulder_lift.pos": ik_result.get("shoulder_lift", 0.0),
+                    "elbow_flex.pos": ik_result.get("elbow_flex", 0.0),
+                    "wrist_flex.pos": ik_result.get("wrist_flex", 0.0),
+                    "wrist_roll.pos": wrist_roll,
+                    "gripper.pos": gripper,
+                }
+
+                observation = (
+                    self.arm.get_observation() if self.arm.is_connected() else {}
+                )
                 stall_status = {}
-                if hand_detected:
-                    missed_frames = 0
-                    ee_target = self.mapper.map(tracking_result)
+                if observation:
+                    action = self.safety.clamp_action(action, observation)
+                    stall_status = self.safety.check_stall(action, observation)
 
-                    # Smooth positions + roll/gripper (roll needs angle-aware EMA)
-                    ee_target.x = self.pos_filter_x.update(ee_target.x)
-                    ee_target.y = self.pos_filter_y.update(ee_target.y)
-                    ee_target.z = self.pos_filter_z.update(ee_target.z)
-                    ee_target.wrist_roll = self.roll_filter.update(ee_target.wrist_roll)
-                    ee_target.gripper = self.gripper_filter.update(ee_target.gripper)
+                if self.arm.is_connected():
+                    self.arm.send_action(action)
 
-                    # Clutch logic
-                    hand_pos = (
-                        tracking_result.wrist_position[0],
-                        tracking_result.wrist_position[1],
-                        tracking_result.wrist_position[2],
-                    )
-                    adjusted = self.clutch.update(clutch_active, ee_target, hand_pos)
-
-                    if adjusted is not None:
-                        # Rate-limit wrist roll so even a filtered step can't snap
-                        adjusted.wrist_roll = self.roll_rate.update(adjusted.wrist_roll)
-
-                        # IK solve for the 4 arm joints
-                        current_angles = self.arm.get_joint_angles() if self.arm.is_connected() else None
-                        ik_result = self.ik_solver.solve(
-                            target_position=(adjusted.x, adjusted.y, adjusted.z),
-                            current_angles=current_angles,
-                        )
-
-                        # Assemble full action dict
-                        action = {
-                            "shoulder_pan.pos": ik_result.get("shoulder_pan", 0.0),
-                            "shoulder_lift.pos": ik_result.get("shoulder_lift", 0.0),
-                            "elbow_flex.pos": ik_result.get("elbow_flex", 0.0),
-                            "wrist_flex.pos": ik_result.get("wrist_flex", 0.0),
-                            "wrist_roll.pos": adjusted.wrist_roll,
-                            "gripper.pos": adjusted.gripper,
-                        }
-
-                        # Safety clamp
-                        observation = self.arm.get_observation() if self.arm.is_connected() else {}
-                        if observation:
-                            action = self.safety.clamp_action(action, observation)
-                            stall_status = self.safety.check_stall(action, observation)
-                        else:
-                            stall_status = {}
-
-                        # Send to robot
-                        if self.arm.is_connected():
-                            self.arm.send_action(action)
-                else:
-                    # Detection flickers on the grayscale feed; only reset the
-                    # filters after a sustained loss so smoothing keeps history
-                    # across single dropped frames.
-                    missed_frames += 1
-                    if missed_frames >= RESET_AFTER_MISSES:
-                        self.roll_filter.reset()
-                        self.roll_rate.reset()
-                        self.gripper_filter.reset()
-
-                # -- e. Get observation
-                observation = self.arm.get_observation() if self.arm.is_connected() else {}
+                # -- e. Fresh observation for overlay
+                observation = (
+                    self.arm.get_observation() if self.arm.is_connected() else {}
+                )
 
                 # -- f. Update overlay
                 elapsed = time.time() - t0
@@ -252,12 +221,12 @@ class TeleopPipeline:
                 state = OverlayState(
                     connected=self.arm.is_connected(),
                     clutch_active=clutch_active,
-                    joint_positions=action if action else {},
+                    joint_positions=action,
                     joint_observations=observation,
-                    ee_target=(ee_target.x, ee_target.y, ee_target.z) if ee_target else None,
+                    ee_target=ee_xyz,
                     hand_detected=hand_detected,
                     fps=fps,
-                    stall_warnings=stall_status if hand_detected and action else {},
+                    stall_warnings=stall_status,
                     gesture=gesture_name,
                 )
                 self.overlay.update(state)
@@ -278,6 +247,10 @@ class TeleopPipeline:
             logger.exception("Pipeline error")
         finally:
             self.cleanup()
+
+    @staticmethod
+    def _clamp(value: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, value))
 
     def cleanup(self):
         """Release all resources."""

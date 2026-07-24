@@ -112,12 +112,22 @@ python scripts/test_hand_tracking.py --webcam # USB fallback
 
 Shows position, wrist roll, pinch, and fist/clutch on screen. Press **q** to quit.
 
+### Test relative target (no arm)
+
+```bash
+python scripts/test_target_position.py
+```
+
+Prints teleop `x y z gripper roll` with fist clutch. Hold still — numbers should sit rock solid. Press **r** to reset, **q** to quit.
+
 ### Run the full teleop pipeline
 
 ```bash
 cd robot
-python -m src.main
+python -m src.main --port COM5
 ```
+
+Arm starts at home `(0.0, 0.18, 0.20)` m. Open hand moves relative to engage; fist freezes; release re-anchors (no snap).
 
 ### Common options
 

@@ -34,12 +34,24 @@ class Settings:
     workspace_y_max: float = 0.30
     workspace_z_min: float = 0.05
     workspace_z_max: float = 0.35
+
+    # Relative teleop: (0,0,0) + home offset = reachable start pose in meters.
+    # Scales convert normalized hand deltas → meters. Tune live if reach feels off.
+    home_x: float = 0.0
+    home_y: float = 0.18
+    home_z: float = 0.20
+    teleop_scale_x: float = 2.0   # depth (hand size) → reach
+    teleop_scale_y: float = 0.75  # image-x → lateral
+    teleop_scale_z: float = 0.75  # image-y → up/down
+    teleop_roll_scale: float = 1.0
     
     # Filters
-    z_filter_alpha: float = 0.3
+    z_filter_alpha: float = 0.08
     z_clamp_range: Tuple[float, float] = (0.05, 0.35)
-    position_filter_alpha: float = 0.2
+    position_filter_alpha: float = 0.15
     deadzone_threshold: float = 0.005
+    xy_deadband: float = 0.006
+    z_deadband: float = 0.010
     # Wrist roll is the noisiest channel (landmark geometry on grayscale).
     # Low alpha + deadzone = arm doesn't twitch from jitter; intentional
     # twists still come through after a beat.
