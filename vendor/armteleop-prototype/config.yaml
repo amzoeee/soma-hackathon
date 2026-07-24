@@ -37,7 +37,7 @@ mapping:
 
 ik:
   tier: ikpy                    # ikpy (URDF, position IK) | A (analytic fallback)
-  urdf_path: "assets/so101.urdf"
+  urdf_path: "../../robot/config/so101.urdf"
   # Analytic fallback params:
   L1: 0.1126
   L2: 0.1349

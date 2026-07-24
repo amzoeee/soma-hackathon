@@ -57,8 +57,8 @@ robot.bus.sync_read("Present_Current")
 Threshold: measure tomorrow under free motion vs light stall → set `load_flag_threshold`.
 
 ### URDF
-- Path: `C:\Users\ryker\hackathons\SO-ARM100\Simulation\SO101\so101_new_calib.urdf`
-- Copy/symlink into `armteleop/assets/so101.urdf` (+ meshes) for twin later
+- Canonical path: `robot/config/so101.urdf` (from repo root; same as SO-ARM100 `so101_new_calib.urdf`)
+- Prototype config: `ik.urdf_path: "../../robot/config/so101.urdf"` (relative to this package)
 - EE link for Tier B / twin: `gripper_frame_link`
 
 ### Analytic link lengths (Tier A) — from URDF joint origins

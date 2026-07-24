@@ -54,8 +54,8 @@ def move_robot(port: str, target_angles: dict, duration: float = 10.0, steps: in
         print(robot.get_observation())
 
     finally:
-        print("Disconnecting...")
-        robot.disconnect()
+        print("Done!")
+        time.sleep(10000)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Move SO-101 follower arm to target joint angles.")

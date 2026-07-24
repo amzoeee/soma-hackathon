@@ -297,17 +297,13 @@ class HardwareAdapterTests(unittest.TestCase):
             def move_cartesian(self, dx: float, dy: float, dz: float) -> dict:
                 self.commanded = (dx, dy, dz)
                 return {
+                    "ok": True,
                     "from_xyz": (0.0, 0.0, 0.0),
-                    "to_xyz": (dx, dy, dz),
-                    "command": {
-                        "applied": {
-                            "shoulder_pan": {
-                                "before_ticks": 100,
-                                "goal_ticks": 110,
-                            }
-                        }
-                    },
+                    "moved": True,
                 }
+
+            def forward_kinematics(self) -> tuple[float, float, float]:
+                return self.commanded
 
         arm = FakeArm()
         with patch("demo.hardware.so101.get_arm", return_value=arm):
@@ -318,16 +314,24 @@ class HardwareAdapterTests(unittest.TestCase):
                 delta_z_m=3.0,
             )
 
-        commanded = arm.commanded
+        commanded_urdf = arm.commanded
         self.assertAlmostEqual(
-            math.sqrt(sum(value * value for value in commanded)),
+            math.sqrt(sum(value * value for value in commanded_urdf)),
             MAX_CARTESIAN_STEP_M,
         )
-        self.assertGreater(commanded[0], 0)
-        self.assertLess(commanded[1], 0)
-        self.assertGreater(commanded[2], 0)
+        # Public (+x right, -y backward, +z up) maps to URDF
+        # (-x backward, -y right, +z up).
+        self.assertLess(commanded_urdf[0], 0)
+        self.assertLess(commanded_urdf[1], 0)
+        self.assertGreater(commanded_urdf[2], 0)
         self.assertEqual(result["detail"]["requested_delta_xyz"], (1.0, -2.0, 3.0))
-        self.assertEqual(result["detail"]["applied_delta_xyz"], commanded)
+        applied_public = result["detail"]["applied_delta_xyz"]
+        expected_public = (
+            -commanded_urdf[1],
+            commanded_urdf[0],
+            commanded_urdf[2],
+        )
+        self.assertEqual(applied_public, expected_public)
 
 
 if __name__ == "__main__":
