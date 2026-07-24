@@ -1,0 +1,6 @@
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+numpy>=1.24.0
+ikpy>=3.3.0
+# lerobot (install from source or pip)
+pyyaml>=6.0
