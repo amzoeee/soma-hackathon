@@ -1,7 +1,5 @@
 # Future Product Plan
 
-## Product Vision
-
 Build an autonomous factory robot that can receive high-level tasks, navigate through a workspace, locate and manipulate objects, and ask a remote human operator for help when autonomy fails.
 
 The robot combines a mobile base, robotic arm, gripper, camera, AI agent, and remote AR teleoperation.
@@ -36,74 +34,20 @@ Robot failure
   → Control returns to the autonomous agent
 ```
 
-## Major Capabilities
+## Parallel agent briefs
 
-### Task Interface and Agent
+Hand each brief to a different coding agent. Agents **1–4 can run at the same time**. Agent 5 starts after those land (or stubs the imports and merges last).
 
-- Receive goals and send status updates through iMessage and Linq
-- Use Runware-hosted GPT-5.6 Luna to interpret goals and select high-level tools
-- Track the current task and react to tool results
-- Escalate failures to a human operator
-
-### Autonomous Robot Operation
-
-- Move relative to the robot's current position
-- Navigate to coordinates or named locations
-- Use the camera to find requested objects
-- Approach and pick up objects with the arm and gripper
-- Carry objects to a destination and release them
-- Report success, failure, and current status
-
-The robot team will implement the underlying navigation, perception, coordinate handling, and physical movement APIs. The AI agent will call these capabilities through stable, high-level tool interfaces.
-
-### Human Recovery
-
-- Notify an available operator when the robot cannot complete a task
-- Stream the robot's live camera feed to the operator's AR glasses
-- Transfer arm and gripper control to the hand-tracking teleoperation system
-- Allow the operator to complete or recover the failed manipulation
-- Return control to autonomous operation afterward
-
-### Control Modes
-
-The system will transition between:
-
-```text
-Autonomous → Escalating → Human Control → Resuming → Autonomous
-```
-
-Only the active controller should send movement commands during each mode.
-
-## Planned Agent Tools
-
-The eventual tool surface should cover capabilities such as:
-
-- Move in a direction
-- Navigate to coordinates or a named location
-- Find an object from its description
-- Approach and pick up an object
-- Drop an object at a destination
-- Read robot and task status
-- Stop the robot
-- Request human assistance
-
-During early development, these tools can return simulated results. Each simulated implementation will later be replaced by the corresponding robot capability without changing the agent-facing interface.
-
-## Core Stack
-
-- Linq for iMessage task entry, progress messages, and escalation notifications
-- FastAPI for webhook handling and orchestration
-- Runware for LLM inference
-- GPT-5.6 Luna for intent interpretation and high-level tool selection
-- Robot-team APIs for navigation, perception, arm movement, and gripping
-- Camera streaming to the AR glasses
-- Existing hand-tracking teleoperation pipeline for manual arm and gripper control
-
-Additional persistence or workflow infrastructure can be introduced when task duration and reliability requirements justify it; it is not required for the first demonstration.
+| Order | Brief | Owns | Parallel? |
+|---|---|---|---|
+| Shared | [00-shared-contracts.md](./future-product-plan/00-shared-contracts.md) | Interfaces only — read first | All agents read this |
+| 1 | [01-task-agent.md](./future-product-plan/01-task-agent.md) | Goal interpretation, task loop, tool selection | Yes |
+| 2 | [02-robot-autonomy-tools.md](./future-product-plan/02-robot-autonomy-tools.md) | High-level robot tools (sim → real swap) | Yes |
+| 3 | [03-human-recovery.md](./future-product-plan/03-human-recovery.md) | Escalation notify, AR stream, teleop handoff | Yes |
+| 4 | [04-control-modes.md](./future-product-plan/04-control-modes.md) | Mode arbiter; exclusive command ownership | Yes |
+| 5 | [05-wire-and-demo.md](./future-product-plan/05-wire-and-demo.md) | Failure-injection demo + end-to-end DoD | After 1–4 |
 
 ## Target End-to-End Demonstration
-
-The target demonstration is:
 
 1. A user sends a request to move an object to a destination.
 2. The agent invokes the robot's autonomous navigation and manipulation capabilities.
@@ -115,3 +59,18 @@ The target demonstration is:
 8. The robot completes the delivery and reports success.
 
 This autonomous-to-human recovery loop is the central product differentiator.
+
+## Definition of Done
+
+The future product slice is complete when:
+
+1. An iMessage goal drives a multi-step autonomous tool sequence.
+2. Simulated (or real) robot tools cover move, navigate, find, pick, drop, status, and stop.
+3. A forced pickup failure escalates to a remote operator via Linq.
+4. Control mode transitions `Autonomous → Escalating → Human Control → Resuming → Autonomous`.
+5. Only the active controller can send arm/base commands during each mode.
+6. After human recovery, autonomy resumes and reports delivery success.
+
+## Relationship to First Test Demo
+
+[First test demo](./first-test-demo.md) proves Linq → FastAPI → Luna → `move_robot` print. This plan extends that stack: richer tools, task tracking, control modes, and human recovery. Prefer extending `agent/src/demo/` contracts rather than rewriting the Linq/LLM path. Do not modify the existing LangGraph arm pipeline under `agent/src/linq/` unless a brief explicitly says so.
