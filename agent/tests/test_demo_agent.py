@@ -134,6 +134,22 @@ class ToolContractTests(unittest.TestCase):
         )
         self.assertEqual(format_tool_results([]), SUPPORTED_ACTIONS_REPLY)
 
+    def test_hold_schema_has_non_empty_explicit_parameters(self) -> None:
+        schema = next(
+            tool["function"]
+            for tool in TOOLS
+            if tool["function"]["name"] == "hold_position"
+        )
+        self.assertEqual(schema["parameters"]["required"], ["hold"])
+        self.assertEqual(
+            schema["parameters"]["properties"]["hold"]["enum"],
+            [True],
+        )
+        with patch("demo.tools.robot_tools._hardware_enabled", return_value=False):
+            result = execute_tool("hold_position", {"hold": True})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["arguments"], {"hold": True})
+
     def test_failure_stops_summary_at_failed_step(self) -> None:
         results = [
             {
@@ -253,7 +269,7 @@ class PlannerSequenceTests(unittest.IsolatedAsyncioTestCase):
         _FakeClient.calls = [
             _tool_call("set_gripper", {"state": "open"}),
             _tool_call("set_gripper", {"state": "closed"}),
-            _tool_call("hold_position", {}),
+            _tool_call("hold_position", {"hold": True}),
         ]
         executed: list[str] = []
 

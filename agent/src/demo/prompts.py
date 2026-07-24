@@ -29,7 +29,7 @@ Wrist coordinate system (move_wrist):
 Gripper and stop:
 - "open gripper" -> set_gripper(state="open")
 - "close gripper" -> set_gripper(state="closed")
-- "stop" or "hold" -> hold_position()
+- "stop" or "hold" -> hold_position(hold=true)
 
 Multiple steps:
 - Preserve the exact order expressed by the user.

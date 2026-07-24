@@ -24,7 +24,7 @@ The model never authors the outbound iMessage text.
 | `move_cartesian` | Differential XYZ movement through IK (`+x` right, `+y` forward, `+z` up) |
 | `move_wrist` | Differential wrist pitch and roll from `-160°` through `+160°` |
 | `set_gripper` | Fully open or close the calibrated gripper |
-| `hold_position` | Stop and hold the current pose |
+| `hold_position(hold=true)` | Stop and hold the current pose |
 
 One user message can produce multiple ordered calls. If a step fails, later
 steps are not executed.

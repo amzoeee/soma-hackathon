@@ -444,7 +444,7 @@ Expected service behavior:
 
 ```text
 POST /webhooks/linq ... 200 OK
-Executing robot step 1/1: hold_position {}
+Executing robot step 1/1: hold_position {'hold': True}
 POST .../chats/<chat-id>/messages ... 2xx
 ```
 

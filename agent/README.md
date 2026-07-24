@@ -57,7 +57,7 @@ and the sequence stops on the first failure.
 - `move_wrist(pitch_degrees, roll_degrees)` — differential wrist motion; each
   motor accepts `-160` through `+160` degrees.
 - `set_gripper(state)` — set the calibrated endpoint to `open` or `closed`.
-- `hold_position()` — stop motion and hold the current pose.
+- `hold_position(hold=true)` — stop motion and hold the current pose.
 
 For a retrace request, the planner emits inverse Cartesian and wrist calls in
 reverse order. Gripper operations are changed only when the user explicitly

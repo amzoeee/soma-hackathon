@@ -100,7 +100,14 @@ HOLD_POSITION_SCHEMA: dict[str, Any] = {
         "description": "Stop motion and hold the robot's current pose.",
         "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "hold": {
+                    "type": "boolean",
+                    "enum": [True],
+                    "description": "Must be true to explicitly request a hold.",
+                }
+            },
+            "required": ["hold"],
             "additionalProperties": False,
         },
     },
@@ -422,14 +429,22 @@ def set_gripper(state: str) -> dict[str, Any]:
     )
 
 
-def hold_position() -> dict[str, Any]:
+def hold_position(hold: bool) -> dict[str, Any]:
     """Hold the current pose."""
     tool = "hold_position"
+    arguments = {"hold": hold}
+    if hold is not True:
+        return _result(
+            ok=False,
+            tool=tool,
+            arguments=arguments,
+            message="hold must be true.",
+        )
     if not _hardware_enabled():
         return _result(
             ok=True,
             tool=tool,
-            arguments={},
+            arguments=arguments,
             message="Robot hold requested (simulation).",
         )
 
@@ -447,7 +462,7 @@ def hold_position() -> dict[str, Any]:
         return _result(
             ok=False,
             tool=tool,
-            arguments={},
+            arguments=arguments,
             message=f"Robot hold failed: {exc}",
         )
     detail = result.get("detail") if isinstance(result, dict) else None
@@ -455,14 +470,14 @@ def hold_position() -> dict[str, Any]:
         return _result(
             ok=False,
             tool=tool,
-            arguments={},
+            arguments=arguments,
             message=f"Robot hold failed: {detail or 'hardware rejected command'}",
             data=detail if isinstance(detail, dict) else None,
         )
     return _result(
         ok=True,
         tool=tool,
-        arguments={},
+        arguments=arguments,
         message="Robot is holding its current pose.",
         data=detail if isinstance(detail, dict) else None,
     )
