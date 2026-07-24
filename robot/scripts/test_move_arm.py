@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script to move the LeRobot SO-101 follower arm to a target joint position.
+Explicitly enables motor torque before sending actions.
 """
 
 import time
@@ -15,6 +16,13 @@ def move_robot(port: str, target_angles: dict, duration: float = 10.0, steps: in
     robot.connect()
 
     try:
+        # Explicitly enable torque on all motors
+        print("Enabling motor torque...")
+        if hasattr(robot, 'bus') and hasattr(robot.bus, 'enable_torque'):
+            robot.bus.enable_torque()
+        elif hasattr(robot, 'robot') and hasattr(robot.robot, 'bus'):
+            robot.robot.bus.enable_torque()
+
         current_obs = robot.get_observation()
         print("Current observation:", current_obs)
 
@@ -30,12 +38,14 @@ def move_robot(port: str, target_angles: dict, duration: float = 10.0, steps: in
         sleep_time = duration / steps
 
         for i in range(1, steps + 1):
-            print("Current observation:", current_obs)
             alpha = i / steps
             interpolated_action = {}
             for key, target_val in target_angles.items():
                 start_val = start_positions[key]
                 interpolated_action[key] = start_val + alpha * (target_val - start_val)
+
+            current_obs = robot.get_observation()
+            print("Current observation:", current_obs)
 
             robot.send_action(interpolated_action)
             time.sleep(sleep_time)
@@ -54,12 +64,12 @@ if __name__ == "__main__":
 
     # Define target joint positions
     target_angles = {
-        "shoulder_pan.pos": 10.0,
-        "shoulder_lift.pos": 10.0,
-        "elbow_flex.pos": 10.0,
-        "wrist_flex.pos": 10.0,
-        "wrist_roll.pos": 10.0,
-        "gripper.pos": 10.0,
+        "shoulder_pan.pos": 0.0,
+        "shoulder_lift.pos": 0.0,
+        "elbow_flex.pos": 0.0,
+        "wrist_flex.pos": 0.0,
+        "wrist_roll.pos": 0.0,
+        "gripper.pos": 50.0,
     }
 
     move_robot(args.port, target_angles)
