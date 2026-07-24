@@ -42,6 +42,8 @@ MAX_RES = MOTOR_RESOLUTION - 1
 DEFAULT_BAUD = 1_000_000
 DEFAULT_ACCEL = 60
 DEFAULT_GOAL_SPEED = 450
+MIN_WRIST_DEGREES = -160.0
+MAX_WRIST_DEGREES = 160.0
 
 DEFAULT_JOINT_IDS = {
     "shoulder_pan": 1,
@@ -57,7 +59,7 @@ IK_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex")
 # LeRobot gives the gripper RANGE_0_100; every other joint is DEGREES.
 GRIPPER = "gripper"
 
-MAX_CARTESIAN_STEP_M = 0.06
+MAX_CARTESIAN_STEP_M = 0.5
 
 # The so101.urdf chain is right-handed with +x forward, +y left, +z up.
 # Measured off the loaded chain (all joints at 0 deg): the tool sits at
@@ -72,7 +74,8 @@ WORKSPACE = {
 }
 
 # Ramp shape. The script uses 10s/100 steps for a full-reach absolute move;
-# agent moves are <=6cm nudges, so the same 0.05s cadence over a shorter ramp.
+# Cartesian requests may span the full configured workspace. The workspace and
+# IK reachability checks below remain the final physical bounds.
 MOVE_DURATION_S = 2.0
 MOVE_STEPS = 40
 JOINT_DURATION_S = 1.0
@@ -643,6 +646,26 @@ class SO101Arm:
                 "limits": [round(v, 1) for v in cal.pos_limits],
             }
 
+    def set_gripper(self, state: str) -> dict[str, Any]:
+        """Ramp the gripper to its calibrated open or closed endpoint."""
+        with self._lock:
+            self._ensure()
+            start = self._transport.read_pos()
+            goal = dict(start)
+            goal[GRIPPER] = 100.0 if state == "open" else 0.0
+            measured = self._ramp(start, goal, JOINT_DURATION_S, JOINT_STEPS)
+            moved = abs(measured[GRIPPER] - start[GRIPPER]) >= MOVED_EPSILON
+            at_target = abs(measured[GRIPPER] - goal[GRIPPER]) < 1.0
+            return {
+                "ok": at_target,
+                "state": state,
+                "before": round(start[GRIPPER], 2),
+                "goal": goal[GRIPPER],
+                "measured": round(measured[GRIPPER], 2),
+                "moved": moved,
+                "limits": [0.0, 100.0],
+            }
+
     def hold(self) -> dict[str, Any]:
         """Command the current pose so gravity does not drop the links."""
         with self._lock:
@@ -683,82 +706,148 @@ def get_arm(
         return _arm
 
 
-def _cartesian_step_m(distance_meters: float | None) -> float:
-    meters = abs(float(distance_meters or 0.05))
-    # Text distances are often large (0.2–1m); clamp to a safe EE step.
-    return max(0.015, min(MAX_CARTESIAN_STEP_M, meters))
+def _limit_cartesian_delta(
+    delta_x_m: float,
+    delta_y_m: float,
+    delta_z_m: float,
+) -> tuple[float, float, float]:
+    """Limit a public XYZ vector while preserving its direction."""
+    requested = (float(delta_x_m), float(delta_y_m), float(delta_z_m))
+    magnitude = math.sqrt(sum(value * value for value in requested))
+    if magnitude <= MAX_CARTESIAN_STEP_M:
+        return requested
+    scale = MAX_CARTESIAN_STEP_M / magnitude
+    return tuple(value * scale for value in requested)  # type: ignore[return-value]
 
 
-# Joint-space only for wrist / gripper. Spatial moves use IK.
-_JOINT_ONLY: dict[str, tuple[str, int]] = {
-    "tilt_up": ("wrist_flex", +1),
-    "tilt_down": ("wrist_flex", -1),
-    "roll_left": ("wrist_roll", +1),
-    "roll_right": ("wrist_roll", -1),
-    "open": ("gripper", +1),
-    "close": ("gripper", -1),
-}
-
-DEFAULT_WRIST_DEGREES = 20.0
-GRIPPER_STEP_PERCENT = 25.0
-
-
-def apply_move(
+def apply_cartesian_delta(
     *,
     port: str,
-    direction: str,
-    distance_meters: float | None,
-    angle_degrees: float | None,
+    delta_x_m: float,
+    delta_y_m: float,
+    delta_z_m: float,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Apply a differential in the public frame.
+
+    Public frame: +x right, +y forward, +z up.
+    URDF frame: +x forward, +y left, +z up.
+    """
+    arm = get_arm(port, calibration_path, urdf_path)
+    arm.connect()
+
+    requested = (float(delta_x_m), float(delta_y_m), float(delta_z_m))
+    commanded = _limit_cartesian_delta(*requested)
+    # Convert public (+x right, +y forward) to URDF (+x forward, +y left).
+    urdf_delta = (commanded[1], -commanded[0], commanded[2])
+    try:
+        detail = arm.move_cartesian(
+            dx=urdf_delta[0],
+            dy=urdf_delta[1],
+            dz=urdf_delta[2],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("IK move failed")
+        return {"ok": False, "detail": {"error": f"ik failed: {exc}"}}
+
+    if not detail.get("ok"):
+        detail.update(
+            {
+                "requested_delta_xyz": requested,
+                "commanded_delta_xyz": commanded,
+            }
+        )
+        return {"ok": False, "detail": detail}
+
+    from_urdf = tuple(float(value) for value in detail["from_xyz"])
+    measured_urdf = tuple(float(value) for value in arm.forward_kinematics())
+    applied_urdf = tuple(
+        measured_urdf[index] - from_urdf[index] for index in range(3)
+    )
+    applied_public = (-applied_urdf[1], applied_urdf[0], applied_urdf[2])
+    moved = bool(detail.get("moved"))
+    detail.update(
+        {
+            "requested_delta_xyz": requested,
+            "commanded_delta_xyz": commanded,
+            "applied_delta_xyz": applied_public,
+            "measured_xyz_urdf": measured_urdf,
+        }
+    )
+    return {"ok": moved, "detail": detail}
+
+
+def apply_wrist_delta(
+    *,
+    port: str,
+    pitch_degrees: float,
+    roll_degrees: float,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Apply differential wrist pitch/roll in the public ±160° range."""
+    pitch = float(pitch_degrees)
+    roll = float(roll_degrees)
+    if not MIN_WRIST_DEGREES <= pitch <= MAX_WRIST_DEGREES:
+        return {"ok": False, "detail": {"error": "pitch must be between -160 and +160"}}
+    if not MIN_WRIST_DEGREES <= roll <= MAX_WRIST_DEGREES:
+        return {"ok": False, "detail": {"error": "roll must be between -160 and +160"}}
+
+    arm = get_arm(port, calibration_path, urdf_path)
+    arm.connect()
+    joints: dict[str, Any] = {}
+    if abs(pitch) > 1e-9:
+        joints["pitch"] = arm.nudge_joint("wrist_flex", pitch)
+    if abs(roll) > 1e-9:
+        # Public +roll is right; positive wrist_roll.pos is left.
+        joints["roll"] = arm.nudge_joint("wrist_roll", -roll)
+
+    applied_pitch = (
+        float(joints["pitch"]["measured"]) - float(joints["pitch"]["before"])
+        if "pitch" in joints
+        else 0.0
+    )
+    applied_roll = (
+        -(float(joints["roll"]["measured"]) - float(joints["roll"]["before"]))
+        if "roll" in joints
+        else 0.0
+    )
+    moved = all(bool(result.get("moved")) for result in joints.values())
+    return {
+        "ok": moved,
+        "detail": {
+            "requested": {"pitch_degrees": pitch, "roll_degrees": roll},
+            "applied": {
+                "pitch_degrees": applied_pitch,
+                "roll_degrees": applied_roll,
+            },
+            "joints": joints,
+            "moved": moved,
+        },
+    }
+
+
+def apply_gripper_state(
+    *,
+    port: str,
+    state: str,
+    calibration_path: str | Path | None = None,
+    urdf_path: str | Path | None = None,
+) -> dict[str, Any]:
+    if state not in {"open", "closed"}:
+        return {"ok": False, "detail": {"error": "state must be open or closed"}}
+    arm = get_arm(port, calibration_path, urdf_path)
+    detail = arm.set_gripper(state)
+    return {"ok": bool(detail.get("ok")), "detail": detail}
+
+
+def apply_hold_position(
+    *,
+    port: str,
     calibration_path: str | Path | None = None,
     urdf_path: str | Path | None = None,
 ) -> dict[str, Any]:
     arm = get_arm(port, calibration_path, urdf_path)
-    arm.connect()
-
-    if direction == "stop":
-        return {"ok": True, "detail": arm.hold()}
-
-    # Cartesian IK path — drives shoulder_lift AND elbow_flex as separate servos.
-    if direction in {"forward", "backward", "up", "down", "left", "right"}:
-        step = _cartesian_step_m(distance_meters)
-        if direction in {"left", "right"}:
-            # Convert turn angle into a sideways EE step at ~current reach.
-            degrees = float(angle_degrees if angle_degrees is not None else 30.0)
-            step = max(0.015, min(MAX_CARTESIAN_STEP_M, abs(degrees) / 90.0 * 0.06))
-
-        # See WORKSPACE: +x is reach, +y is left, +z is up.
-        dx = dy = dz = 0.0
-        if direction == "forward":
-            dx = +step
-        elif direction == "backward":
-            dx = -step
-        elif direction == "up":
-            dz = +step
-        elif direction == "down":
-            dz = -step
-        elif direction == "left":
-            dy = +step
-        elif direction == "right":
-            dy = -step
-
-        try:
-            detail = arm.move_cartesian(dx=dx, dy=dy, dz=dz)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("IK move failed")
-            return {"ok": False, "detail": {"error": f"ik failed: {exc}"}}
-
-        return {"ok": bool(detail.get("ok")), "detail": detail}
-
-    mapping = _JOINT_ONLY.get(direction)
-    if mapping is None:
-        return {"ok": False, "detail": {"error": f"unsupported direction {direction!r}"}}
-
-    joint, sign = mapping
-    if direction in {"open", "close"}:
-        delta = sign * GRIPPER_STEP_PERCENT
-    else:
-        degrees = abs(float(angle_degrees if angle_degrees is not None else DEFAULT_WRIST_DEGREES))
-        delta = sign * degrees
-
-    detail = arm.nudge_joint(joint, delta)
-    return {"ok": bool(detail.get("moved", True)), "detail": detail}
+    detail = arm.hold()
+    return {"ok": bool(detail.get("ok")), "detail": detail}

@@ -44,38 +44,18 @@ class Settings(BaseSettings):
     runware_model: str = "gpt-5.6-luna"
     public_base_url: str = ""
 
-    terac_api_key: str = ""
-    terac_base_url: str = "https://terac.com/api/external/v2"
-    terac_dry_run: bool = True
-    terac_dry_run_decision: str = "approve"
-    terac_project_id: str = ""
-    terac_webhook_secret: str = ""
-    terac_require_confirmation: bool = False
-    terac_expert_role: str = "robotics / manufacturing operator"
-
     robot_enabled: bool = False
     robot_port: str = "/dev/cu.usbmodem5A460824771"
     robot_calibration_path: str = _default_calibration_path()
     robot_urdf_path: str = _default_urdf_path()
 
     @field_validator(
-        "terac_dry_run",
-        "terac_require_confirmation",
         "robot_enabled",
         mode="before",
     )
     @classmethod
     def _parse_bool(cls, value: object) -> bool:
         return _as_bool(value)
-
-    @field_validator("terac_dry_run_decision", mode="before")
-    @classmethod
-    def _normalize_decision(cls, value: object) -> str:
-        decision = str(value or "approve").strip().lower()
-        if decision not in {"approve", "reject"}:
-            return "approve"
-        return decision
-
 
 @lru_cache
 def get_settings() -> Settings:
