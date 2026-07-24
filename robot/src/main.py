@@ -60,10 +60,10 @@ class TeleopPipeline:
                 resolution=self.settings.camera_resolution,
             )
         else:
-            logger.info("Using Xreal One Pro Eye camera")
+            logger.info("Using Xreal One Pro Eye camera (TCP grayscale stream)")
             self.camera = XrealEyeCamera(
-                device_index=self.settings.camera_device_index,
-                resolution=self.settings.camera_resolution,
+                host=self.settings.eye_host,
+                port=self.settings.eye_port,
             )
 
     def _init_tracking(self):

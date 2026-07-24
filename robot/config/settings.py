@@ -9,14 +9,17 @@ class Settings:
     camera_device_index: int = 0
     camera_resolution: Tuple[int, int] = (640, 480)
     use_webcam_fallback: bool = False
+    # Eye TCP stream (Aloim grayscale protocol — not a UVC device index)
+    eye_host: str = '169.254.2.1'
+    eye_port: int = 52997
     
-    # Hand tracking
+    # Hand tracking (0.25 tuned on real Eye grayscale + enhancement)
     hand_model_path: str = 'models/hand_landmarker.task'
     gesture_model_path: str = 'models/gesture_recognizer.task'
     num_hands: int = 1
-    min_detection_confidence: float = 0.5
-    min_tracking_confidence: float = 0.5
-    min_gesture_confidence: float = 0.6
+    min_detection_confidence: float = 0.25
+    min_tracking_confidence: float = 0.25
+    min_gesture_confidence: float = 0.5
     
     # Mapping - hand tracking box (normalized coords 0-1)
     hand_box_x_min: float = 0.2
@@ -38,8 +41,8 @@ class Settings:
     position_filter_alpha: float = 0.2
     deadzone_threshold: float = 0.005
     
-    # Robot
-    robot_port: str = '/dev/ttyACM0'
+    # Robot (Windows: COMx, Linux: /dev/ttyACM0)
+    robot_port: str = 'COM5'
     robot_id: str = 'follower'
     urdf_path: str = 'config/so101.urdf'
     

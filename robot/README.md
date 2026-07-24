@@ -35,34 +35,32 @@ Xreal Eye Camera ──► Hand Tracking (MediaPipe) ──► Hand-to-EE Mappin
 
 ```
 soma-hackathon/
-├── config/
-│   ├── __init__.py
-│   └── settings.py              # All tunable params (dataclass + YAML/argparse)
-├── src/
-│   ├── main.py                  # Entry point, orchestrates full pipeline
-│   ├── camera/
-│   │   ├── xreal_eye.py         # Xreal One Pro Eye camera capture
-│   │   └── webcam_fallback.py   # USB webcam fallback
-│   ├── tracking/
-│   │   ├── hand_tracker.py      # MediaPipe HandLandmarker
-│   │   └── gesture.py           # MediaPipe GestureRecognizer (clutch)
-│   ├── mapping/
-│   │   ├── hand_to_ee.py        # Hand landmarks → EE target (x,y,z,roll,gripper)
-│   │   ├── clutch.py            # Fist engage/disengage with delta offset
-│   │   └── filters.py           # EMA, deadzone, rate limiter
-│   ├── ik/
-│   │   └── solver.py            # ikpy IK solver using SO-101 URDF
-│   ├── robot/
-│   │   ├── arm_controller.py    # LeRobot SO-101 send_action / get_observation
-│   │   └── safety.py            # Joint clamping + stall detection
-│   └── overlay/
-│       └── status_display.py    # OpenCV status overlay for glasses
-├── scripts/
-│   ├── calibrate.sh             # lerobot-calibrate wrapper
-│   ├── download_models.sh       # Download MediaPipe model files
-│   └── test_camera.py           # Quick camera test
-├── models/                      # MediaPipe .task files (downloaded)
-└── requirements.txt
+├── agent/                       # Linq agent / LLM robot demo (Zoe)
+├── robot/                       # Hand-tracking teleop pipeline (this package)
+│   ├── config/
+│   │   ├── settings.py          # Tunable params
+│   │   └── so101.urdf           # IK URDF
+│   ├── src/
+│   │   ├── main.py              # Full pipeline entry
+│   │   ├── camera/
+│   │   │   ├── xreal_eye.py     # Aloim TCP grayscale Eye stream (NOT VideoCapture)
+│   │   │   └── webcam_fallback.py
+│   │   ├── tracking/
+│   │   │   ├── enhance.py       # CLAHE/gamma for grayscale MediaPipe
+│   │   │   ├── hand_tracker.py
+│   │   │   └── gesture.py       # Closed_Fist = clutch
+│   │   ├── mapping/             # hand → EE + clutch
+│   │   ├── ik/                  # ikpy, degrees out
+│   │   ├── robot/               # LeRobot SO-101 wrapper
+│   │   └── overlay/             # glasses HUD
+│   ├── scripts/
+│   │   ├── test_hand_tracking.py  # landmark + pos/roll/pinch/fist view
+│   │   ├── test_camera.py
+│   │   ├── calibrate.sh
+│   │   └── download_models.sh
+│   ├── models/                  # MediaPipe .task files
+│   └── requirements.txt
+└── docs/
 ```
 
 ## Setup
@@ -70,6 +68,7 @@ soma-hackathon/
 ### 1. Install dependencies
 
 ```bash
+cd robot
 pip install -r requirements.txt
 ```
 
@@ -88,26 +87,35 @@ This downloads `hand_landmarker.task` and `gesture_recognizer.task` into `models
 
 ### 3. Calibrate the SO-101
 
-Required before first use:
+Required before first use (Windows example — change port on Linux):
 
 ```bash
-bash scripts/calibrate.sh
-# or directly:
-lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=follower
+lerobot-calibrate --robot.type=so101_follower --robot.port=COM5 --robot.id=follower
 ```
 
 ### 4. Xreal One Pro setup
 
 - Install Nebula beta firmware on the glasses
-- Enable Spatial Anchor mode
-- Connect via USB-C -- the Eye camera appears as a device on NCM virtual Ethernet
+- Enable Spatial Anchor mode (resets after glasses restart — stream is silent without it)
+- Connect via USB-C — Eye stream is TCP on `169.254.2.1:52997`, not a UVC webcam
 - See: [Grayscale Feed community guide](https://github.com/Aloim/Grayscale-Feed-Xreal-One-Pro-Eye-Windows-Nebula-Beta-needed-)
 
 ## Usage
 
-### Run the teleop pipeline
+### Test hand tracking first (recommended)
 
 ```bash
+cd robot
+python scripts/test_hand_tracking.py          # Eye grayscale + landmarks
+python scripts/test_hand_tracking.py --webcam # USB fallback
+```
+
+Shows position, wrist roll, pinch, and fist/clutch on screen. Press **q** to quit.
+
+### Run the full teleop pipeline
+
+```bash
+cd robot
 python -m src.main
 ```
 
@@ -117,8 +125,8 @@ python -m src.main
 # Use a regular webcam instead of Xreal Eye camera
 python -m src.main --use-webcam
 
-# Specify robot port
-python -m src.main --port /dev/ttyACM1
+# Specify robot port (Windows)
+python -m src.main --port COM5
 
 # Set target FPS
 python -m src.main --fps 20
@@ -126,15 +134,6 @@ python -m src.main --fps 20
 # Load from YAML config
 python -m src.main --config config/my_settings.yaml
 ```
-
-### Test camera only
-
-```bash
-python scripts/test_camera.py
-python scripts/test_camera.py --webcam
-```
-
-Press **ESC** to quit.
 
 ## Controls
 
