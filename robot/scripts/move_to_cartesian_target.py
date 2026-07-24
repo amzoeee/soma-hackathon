@@ -22,7 +22,7 @@ except ModuleNotFoundError:
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 
-def move_to_cartesian_target(port: str, target_xyz: tuple, duration: float = 10.0, steps: int = 100):
+def move_to_cartesian_target(port: str, target_xyz: tuple, duration: float = 5.0, steps: int = 200):
     urdf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config/so101.urdf"))
     if not os.path.exists(urdf_path):
         print(f"Error: URDF file not found at {urdf_path}")
@@ -91,8 +91,28 @@ def move_to_cartesian_target(port: str, target_xyz: tuple, duration: float = 10.
             robot.send_action(interpolated_action)
             time.sleep(sleep_time)
 
+        final_obs = robot.get_observation()
         print("\nMovement complete. Final observation:")
-        print(robot.get_observation())
+        print(final_obs)
+
+        # Calculate actual end cartesian position via FK
+        final_joint_angles = [
+            final_obs.get("shoulder_pan.pos", target_action["shoulder_pan.pos"]),
+            final_obs.get("shoulder_lift.pos", target_action["shoulder_lift.pos"]),
+            final_obs.get("elbow_flex.pos", target_action["elbow_flex.pos"]),
+            final_obs.get("wrist_flex.pos", target_action["wrist_flex.pos"]),
+        ]
+        actual_xyz = solver.forward_kinematics(final_joint_angles)
+
+        print("\n" + "=" * 50)
+        print("TARGET END STATE SUMMARY")
+        print("=" * 50)
+        print(f"Target Cartesian Position (X, Y, Z): ({target_xyz[0]:.4f}, {target_xyz[1]:.4f}, {target_xyz[2]:.4f}) m")
+        print(f"Actual Cartesian Position (FK)     : ({actual_xyz[0]:.4f}, {actual_xyz[1]:.4f}, {actual_xyz[2]:.4f}) m")
+        print("Target Joint Angles:")
+        for joint, angle in target_action.items():
+            print(f"  {joint:20s}: {angle:+.2f}°")
+        print("=" * 50)
 
     finally:
         print("Done!")
