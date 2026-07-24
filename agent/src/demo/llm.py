@@ -1,8 +1,7 @@
-"""Runware/OpenAI-compatible movement interpretation and tool execution."""
+"""Plan and execute an ordered robot-tool sequence with Runware."""
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import os
@@ -14,16 +13,14 @@ logger = logging.getLogger("demo.llm")
 
 DEFAULT_BASE_URL = "https://api.runware.ai/v1"
 DEFAULT_MODEL = "gpt-5.6-luna"
-MAX_TOOL_ROUNDS = 3
+MAX_TOOL_CALLS = 32
 
 
 def _load_openai_client() -> type:
     try:
         from openai import AsyncOpenAI
     except ImportError as exc:
-        raise RuntimeError(
-            "The 'openai' package is required to call Runware"
-        ) from exc
+        raise RuntimeError("The 'openai' package is required to call Runware") from exc
     return AsyncOpenAI
 
 
@@ -31,40 +28,28 @@ def _load_tool_registry() -> tuple[list[dict[str, Any]], Any]:
     try:
         from demo.tools import TOOLS, execute_tool
     except ImportError as exc:
-        raise RuntimeError(
-            "demo.tools is not available yet; task 4 must provide TOOLS and "
-            "execute_tool before LLM tool execution can run"
-        ) from exc
+        raise RuntimeError("demo.tools is not available") from exc
     return TOOLS, execute_tool
 
 
-def _message_to_dict(message: Any) -> dict[str, Any]:
-    """Keep only fields accepted when replaying an assistant tool-call turn."""
-    tool_calls = []
-    for call in message.tool_calls or []:
-        tool_calls.append(
-            {
-                "id": call.id,
-                "type": call.type or "function",
-                "function": {
-                    "name": call.function.name,
-                    "arguments": call.function.arguments,
-                },
-            }
-        )
-    result: dict[str, Any] = {
-        "role": "assistant",
-        "content": message.content,
+def _planning_failure(message: str, *, tool: str = "planner") -> dict[str, Any]:
+    return {
+        "ok": False,
+        "tool": tool,
+        "arguments": {},
+        "message": message,
+        "data": None,
     }
-    if tool_calls:
-        result["tool_calls"] = tool_calls
-    return result
 
 
-async def interpret_and_call_tools(text: str) -> tuple[str, list[dict]]:
-    """Interpret operator text, execute movement tools, and return confirmation."""
+async def interpret_and_call_tools(text: str) -> list[dict[str, Any]]:
+    """Plan once, then execute every returned tool call sequentially.
+
+    Model-authored prose is intentionally ignored. The caller formats replies
+    exclusively from these structured tool results.
+    """
     if not text or not text.strip():
-        return "Please provide a robot movement command.", []
+        return []
 
     api_key = os.environ.get("RUNWARE_API_KEY", "").strip()
     if not api_key:
@@ -75,69 +60,67 @@ async def interpret_and_call_tools(text: str) -> tuple[str, list[dict]]:
     tools, execute_tool = _load_tool_registry()
     client_type = _load_openai_client()
     client = client_type(api_key=api_key, base_url=base_url)
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": text.strip()},
-    ]
-    tool_results: list[dict] = []
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": text.strip()},
+        ],
+        tools=tools,
+        tool_choice="auto",
+        reasoning_effort="none",
+    )
+    if not response.choices:
+        raise RuntimeError("Runware returned no completion choices")
 
-    for _round in range(MAX_TOOL_ROUNDS + 1):
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            reasoning_effort="none",
-        )
-        if not response.choices:
-            raise RuntimeError("Runware returned no completion choices")
-        message = response.choices[0].message
-        calls = message.tool_calls or []
-        if not calls:
-            assistant_text = (message.content or "").strip()
-            if not assistant_text:
-                assistant_text = (
-                    "The robot command completed."
-                    if tool_results
-                    else "I couldn't interpret that as a supported movement."
+    calls = list(response.choices[0].message.tool_calls or [])
+    if len(calls) > MAX_TOOL_CALLS:
+        return [
+            _planning_failure(
+                f"Sequence has {len(calls)} actions; maximum is {MAX_TOOL_CALLS}."
+            )
+        ]
+
+    results: list[dict[str, Any]] = []
+    for index, call in enumerate(calls, start=1):
+        name = str(call.function.name or "")
+        raw_arguments = call.function.arguments or "{}"
+        arguments: dict[str, Any] = {}
+        try:
+            arguments = json.loads(raw_arguments)
+            if not isinstance(arguments, dict):
+                raise ValueError("arguments must be a JSON object")
+        except (json.JSONDecodeError, ValueError) as exc:
+            arguments = {}
+            result = _planning_failure(
+                f"Step {index} has invalid arguments: {exc}",
+                tool=name or "unknown",
+            )
+        else:
+            logger.info(
+                "Executing robot step %d/%d: %s %s",
+                index,
+                len(calls),
+                name,
+                arguments,
+            )
+            result = execute_tool(name, arguments)
+            if not isinstance(result, dict):
+                result = _planning_failure(
+                    f"Step {index} returned an invalid result.",
+                    tool=name or "unknown",
                 )
-            return assistant_text, tool_results
 
-        if _round >= MAX_TOOL_ROUNDS:
-            logger.warning("Stopped after %d tool rounds", MAX_TOOL_ROUNDS)
-            return (
-                "I stopped because the command required too many tool steps.",
-                tool_results,
-            )
+        normalized = dict(result)
+        normalized.setdefault("tool", name or "unknown")
+        normalized.setdefault("arguments", arguments)
+        normalized.setdefault("message", "No result message.")
+        normalized.setdefault("data", None)
+        normalized["step"] = index
+        normalized["sequence_total"] = len(calls)
+        results.append(normalized)
+        if not normalized.get("ok"):
+            logger.warning("Robot sequence stopped at failed step %d", index)
+            break
 
-        messages.append(_message_to_dict(message))
-        for call in calls:
-            name = call.function.name
-            raw_arguments = call.function.arguments or "{}"
-            try:
-                arguments = json.loads(raw_arguments)
-                if not isinstance(arguments, dict):
-                    raise ValueError("tool arguments must be a JSON object")
-                logger.info("Calling tool %s with arguments %s", name, arguments)
-                result = execute_tool(name, arguments)
-                if inspect.isawaitable(result):
-                    result = await result
-                if not isinstance(result, dict):
-                    raise TypeError("execute_tool must return a dict")
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                logger.warning("Tool call %s failed validation: %s", name, exc)
-                result = {
-                    "ok": False,
-                    "printed": "",
-                    "message": f"Tool call {name!r} failed: {exc}",
-                }
-            tool_results.append(result)
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": json.dumps(result),
-                }
-            )
-
-    raise AssertionError("unreachable")
+    return results
