@@ -1,6 +1,7 @@
 # Linqbot
 
-When autonomy needs a human, take over with your hands through AR glasses or iMessage texts/voice diction.
+When autonomy needs a human, take over with your hands through AR glasses or
+iMessage texts/voice diction.
 
 **Linq + Luna planning • Xreal One Pro teleop • LeRobot SO-101**
 
@@ -23,6 +24,9 @@ Send a natural-language request. Linq delivers it, Runware GPT-5.6 Luna plans an
   <video src="docs/assets/imessage-agent-demo.mp4" controls width="260"></video>
 </p>
 -->
+
+### AR Glasses Hand Control
+Control the SO-101 arm using spatial hand tracking sourced directly from the Xreal One Pro Eye monocular camera. The Eye feed processes 21 MediaPipe hand landmarks in real time, mapping Cartesian X/Y/Z motion and wrist roll directly into the arm's workspace. A closed-fist clutch gesture allows you to freeze arm targets, reposition your hand comfortably, and resume relative tracking without sudden snap motions. Real-time telemetry, joint states, and system status render directly on a HUD overlay on the AR glasses display.
 
 ### Leader / Driver Arm Teleop
 Drive the follower SO-101 by moving a calibrated leader (driver) arm — joint-for-joint teleop with optional recording and replay for demos and datasets.
@@ -80,17 +84,16 @@ One message can produce many ordered calls. Execution stops on the first failure
   <img src="docs/assets/tool-sequence-demo.gif" alt="Tool sequence / arm motion" width="260" />
 </p>
 -->
-
 ---
 
 ## How It's Made
 
-| Layer | Stack |
-|---|---|
-| Agent | FastAPI, Linq (iMessage), Runware GPT-5.6 Luna, LangGraph |
-| Robot | MediaPipe, ikpy, LeRobot SO-101, OpenCV |
-| Hardware | Xreal One Pro + Eye camera, Feetech STS3215 servos |
-| Transport | Linq webhooks + LocalTunnel (public HTTPS) |
+| Layer     | Stack                                                     |
+| --------- | --------------------------------------------------------- |
+| Agent     | FastAPI, Linq (iMessage), Runware GPT-5.6 Luna, LangGraph |
+| Robot     | MediaPipe, ikpy, LeRobot SO-101, OpenCV                   |
+| Hardware  | Xreal One Pro + Eye camera, Feetech STS3215 servos        |
+| Transport | Linq webhooks + LocalTunnel (public HTTPS)                |
 
 ```text
 iMessage
@@ -114,6 +117,7 @@ Xreal Eye Camera
 ## Project Status
 
 ### To-Do
+
 - [ ] Terac human-approval gate before any robot motion
 - [ ] High-level autonomy tools (navigate, find, pick, drop)
 - [ ] Failure escalation → remote AR hand-tracking recovery
@@ -122,6 +126,7 @@ Xreal Eye Camera
 - [ ] Automated testing pipeline
 
 ### Finished
+
 - [x] Linq `message.received` webhook → FastAPI agent service
 - [x] Runware Luna planning into ordered, explicit robot tool sequences
 - [x] Deterministic iMessage replies from structured tool results
@@ -139,9 +144,12 @@ Our team gained valuable experience in:
 
 - Wiring a messaging channel (Linq) into a safe, tool-only robot control loop
 - Keeping LLMs in the planner role — never authoring outbound operator text
-- Building AR teleop on a reverse-engineered Eye camera stream under hackathon constraints
-- Separating autonomy, approval, and human recovery so control ownership stays exclusive
-- Project management and hardware + software debugging in a short hackathon window
+- Building AR teleop on a reverse-engineered Eye camera stream under hackathon
+  constraints
+- Separating autonomy, approval, and human recovery so control ownership stays
+  exclusive
+- Project management and hardware + software debugging in a short hackathon
+  window
 
 ---
 
@@ -154,7 +162,8 @@ Before you begin, ensure you have:
 - Python 3 and pip
 - Node.js / npm (for LocalTunnel)
 - [Linq CLI](https://docs.linq.com) (webhook + API key management)
-- Optional hardware: LeRobot SO-101, Xreal One Pro + Eye (Nebula beta, Spatial Anchor on)
+- Optional hardware: LeRobot SO-101, Xreal One Pro + Eye (Nebula beta, Spatial
+  Anchor on)
 
 ### Step 1: Install dependencies
 
@@ -203,7 +212,8 @@ In another terminal, expose the webhook:
 npx --yes localtunnel --port 8000
 ```
 
-Set `PUBLIC_BASE_URL` to the tunnel HTTPS origin and point a Linq `message.received` webhook at:
+Set `PUBLIC_BASE_URL` to the tunnel HTTPS origin and point a Linq
+`message.received` webhook at:
 
 ```text
 https://<tunnel>/webhooks/linq?version=2026-02-03
@@ -215,7 +225,8 @@ Health check:
 curl http://localhost:8000/health
 ```
 
-Full tunnel / Linq checklist: [docs/first-test-demo/setup-runbook.md](docs/first-test-demo/setup-runbook.md)
+Full tunnel / Linq checklist:
+[docs/first-test-demo/setup-runbook.md](docs/first-test-demo/setup-runbook.md)
 
 ### Step 4: Run AR teleop (optional)
 
@@ -226,12 +237,12 @@ python -m src.main --port COM5                # full teleop pipeline
 # python -m src.main --use-webcam             # USB webcam fallback
 ```
 
-| Gesture | Action |
-|---|---|
-| Open hand | Track → move arm |
-| Pinch (thumb + index) | Close gripper |
-| Closed fist | **Clutch** — freeze arm, reposition freely |
-| Release fist | Resume relative to current pose |
+| Gesture               | Action                                     |
+| --------------------- | ------------------------------------------ |
+| Open hand             | Track → move arm                           |
+| Pinch (thumb + index) | Close gripper                              |
+| Closed fist           | **Clutch** — freeze arm, reposition freely |
+| Release fist          | Resume relative to current pose            |
 
 ---
 
