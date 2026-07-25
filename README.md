@@ -26,7 +26,7 @@ Send a natural-language request. Linq delivers it, Runware GPT-5.6 Luna plans an
 -->
 
 ### AR Glasses Hand Control
-Control the SO-101 arm using spatial hand tracking sourced directly from the Xreal One Pro Eye monocular camera. The Eye feed processes 21 MediaPipe hand landmarks in real time, mapping Cartesian X/Y/Z motion and wrist roll directly into the arm's workspace. A closed-fist clutch gesture allows you to freeze arm targets, reposition your hand comfortably, and resume relative tracking without sudden snap motions. Real-time telemetry, joint states, and system status render directly on a HUD overlay on the AR glasses display.
+Control the SO-101 arm using spatial hand tracking sourced directly from the Xreal One Pro Eye monocular camera. The Eye feed processes 21 MediaPipe hand landmarks in real time, mapping Cartesian X/Y/Z motion and wrist roll directly into the arm's workspace. A closed-fist clutch gesture allows you to freeze arm targets, reposition your hand comfortably, and resume relative tracking without sudden snap motions.
 
 ### Leader / Driver Arm Teleop
 Drive the follower SO-101 by moving a calibrated leader (driver) arm — joint-for-joint teleop with optional recording and replay for demos and datasets.
