@@ -7,10 +7,9 @@ When autonomy needs a human, take over with your hands through AR glasses or iMe
 ---
 ## Usecase
 
-As autonomous robotics are increasingly being integrated into the workspace, errors along the production line can cause la
+As autonomous robots move onto production lines and into warehouses, a single point of failure; a crushed part, a missed grasp, or an ambiguous object can stall the whole line. Full autonomy still fails on the messy last 5%, and today the fix is a technician standing by to babysit each robot. Linqbot makes that human a remote exception-handler: the robot runs autonomously until it can't, then hands off. Over iMessage, an operator sends a plain-language request and Luna plans the robot's actions. When a step fails, execution stops and escalates. A human takes over directly with their hands through AR glasses, finishing the task in real time before handing control back. One person can oversee many robots and only touch the moments that actually need a human.
 
 ## Features
-As autonomous robots move onto production lines and into warehouses, a single point of failure; a crushed part, a missed grasp, or an ambiguous object can stall the whole line. Full autonomy still fails on the messy last 5%, and today the fix is a technician standing by to babysit each robot. Linqbot makes that human a remote exception-handler: the robot runs autonomously until it can't, then hands off. Over iMessage, an operator sends a plain-language request and Luna plans the robot's actions. When a step fails, execution stops and escalates. A human takes over directly with their hands through AR glasses, finishing the task in real time before handing control back. One person can oversee many robots and only touch the moments that actually need a human.
 
 ### iMessage Robot Agent
 Send a natural-language request. Linq delivers it, Runware GPT-5.6 Luna plans an ordered tool sequence, the arm executes step-by-step, and you get a deterministic result reply.
